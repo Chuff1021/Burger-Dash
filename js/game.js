@@ -1,23 +1,14 @@
-// game.js — Temple Run style endless runner: turning corridors
+// game.js — Temple Run style endless runner
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { Player } from './player.js';
 import { TrackManager, DIR_VECTORS } from './track.js';
 import { AudioManager } from './audio.js';
 import { SaveManager } from './save.js';
-import { EffectsManager } from './effects.js';
 
-const State = {
-  LOADING: 0,
-  TITLE: 1,
-  PLAYING: 2,
-  PAUSED: 3,
-  GAME_OVER: 4,
-};
+const State = { LOADING: 0, TITLE: 1, PLAYING: 2, PAUSED: 3, GAME_OVER: 4 };
 
 class Game {
   constructor() {
@@ -33,19 +24,18 @@ class Game {
     this.touchStartX = 0;
     this.touchStartY = 0;
     this.touchStartTime = 0;
-    this.SWIPE_THRESHOLD = 40;
-    this.SWIPE_TIMEOUT = 400;
+
+    // Camera smoothing
+    this.camPos = new THREE.Vector3();
+    this.camLook = new THREE.Vector3();
   }
 
   async init() {
     SaveManager.load();
 
-    // --- Renderer ---
     const canvas = document.getElementById('game-canvas');
     this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      powerPreference: 'high-performance',
+      canvas, antialias: true, powerPreference: 'high-performance'
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -55,239 +45,192 @@ class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // --- Scene ---
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0a0608);
-    this.scene.fog = new THREE.FogExp2(0x0a0608, 0.025);
+    this.scene.fog = new THREE.FogExp2(0x0a0608, 0.018);
 
-    // --- Camera (close behind player, Temple Run style) ---
+    // Camera — Temple Run: low, close behind player
     this.camera = new THREE.PerspectiveCamera(
-      65, window.innerWidth / window.innerHeight, 0.1, 100
+      65, window.innerWidth / window.innerHeight, 0.1, 80
     );
 
-    // --- Lighting ---
-    const ambient = new THREE.AmbientLight(0xffeedd, 0.3);
-    this.scene.add(ambient);
+    // Lighting — minimal for performance
+    this.scene.add(new THREE.AmbientLight(0xffeedd, 0.35));
+    this.scene.add(new THREE.HemisphereLight(0x8888cc, 0x443322, 0.2));
 
-    const hemi = new THREE.HemisphereLight(0x8888cc, 0x443322, 0.2);
-    this.scene.add(hemi);
-
-    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    this.dirLight.position.set(3, 8, 5);
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    this.dirLight.position.set(3, 6, 5);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(1024, 1024);
+    this.dirLight.shadow.mapSize.set(512, 512); // smaller = faster
     this.dirLight.shadow.camera.near = 0.5;
-    this.dirLight.shadow.camera.far = 30;
-    this.dirLight.shadow.camera.left = -10;
-    this.dirLight.shadow.camera.right = 10;
-    this.dirLight.shadow.camera.top = 10;
-    this.dirLight.shadow.camera.bottom = -10;
-    this.dirLight.shadow.bias = -0.002;
+    this.dirLight.shadow.camera.far = 25;
+    this.dirLight.shadow.camera.left = -8;
+    this.dirLight.shadow.camera.right = 8;
+    this.dirLight.shadow.camera.top = 8;
+    this.dirLight.shadow.camera.bottom = -8;
+    this.dirLight.shadow.bias = -0.003;
     this.scene.add(this.dirLight);
+    this.scene.add(this.dirLight.target);
 
-    // Player spotlight
-    this.playerLight = new THREE.PointLight(0xFF8C00, 0.8, 12);
+    // Player warm light
+    this.playerLight = new THREE.PointLight(0xFF8C00, 0.6, 10);
     this.scene.add(this.playerLight);
 
-    // --- Post-processing ---
+    // Post-processing (bloom only — keep it light for perf)
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-
     const bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.35, 0.5, 0.75
+      0.3, 0.4, 0.8
     );
     this.composer.addPass(bloom);
     this.bloomPass = bloom;
 
-    const fxaa = new ShaderPass(FXAAShader);
-    const pr = Math.min(window.devicePixelRatio, 2);
-    fxaa.uniforms['resolution'].value.set(
-      1 / (window.innerWidth * pr), 1 / (window.innerHeight * pr)
-    );
-    this.composer.addPass(fxaa);
-    this.fxaaPass = fxaa;
-
-    // Vignette
-    const vignetteShader = {
-      uniforms: {
-        tDiffuse: { value: null },
-        darkness: { value: 0.6 },
-        offset: { value: 1.1 },
-      },
-      vertexShader: `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-      fragmentShader: `
-        uniform sampler2D tDiffuse;uniform float darkness;uniform float offset;varying vec2 vUv;
-        void main(){vec4 c=texture2D(tDiffuse,vUv);vec2 u=(vUv-0.5)*vec2(offset);
-        c.rgb*=mix(vec3(1.0-darkness),vec3(1.0),clamp(1.0-dot(u,u),0.0,1.0));
-        c.rgb*=vec3(1.03,0.97,0.92);gl_FragColor=c;}
-      `
-    };
-    this.composer.addPass(new ShaderPass(vignetteShader));
-
-    // --- Subsystems ---
+    // Subsystems
     this.track = new TrackManager(this.scene);
     this.player = new Player();
-    this.effects = new EffectsManager();
-    this.effects.init(this.scene, this.camera);
 
-    // --- Input ---
+    // Input
     this.wireInput(canvas);
     window.addEventListener('resize', () => this.onResize());
-
-    // --- UI Events ---
     this.wireUI();
 
-    // Show title
     this.state = State.TITLE;
     this.showScreen('title');
+    document.getElementById('title-highscore').textContent = SaveManager.getHighScore();
 
-    // Render loop
     this.lastTime = performance.now();
     requestAnimationFrame(t => this.loop(t));
   }
 
   wireInput(el) {
+    // Touch controls for iPhone
     el.addEventListener('touchstart', e => {
       e.preventDefault();
       if (this.state !== State.PLAYING) return;
-      this.touchStartX = e.changedTouches[0].clientX;
-      this.touchStartY = e.changedTouches[0].clientY;
+      const t = e.changedTouches[0];
+      this.touchStartX = t.clientX;
+      this.touchStartY = t.clientY;
       this.touchStartTime = performance.now();
     }, { passive: false });
 
     el.addEventListener('touchend', e => {
       e.preventDefault();
       if (this.state !== State.PLAYING) return;
-      const dx = e.changedTouches[0].clientX - this.touchStartX;
-      const dy = e.changedTouches[0].clientY - this.touchStartY;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - this.touchStartX;
+      const dy = t.clientY - this.touchStartY;
       const dt = performance.now() - this.touchStartTime;
-      if (dt > this.SWIPE_TIMEOUT) return;
+      if (dt > 500) return;
 
       const ax = Math.abs(dx), ay = Math.abs(dy);
-      if (ax < this.SWIPE_THRESHOLD && ay < this.SWIPE_THRESHOLD) return;
+      const threshold = 30; // lower = more responsive
+
+      if (ax < threshold && ay < threshold) return; // tap, ignore
 
       if (ax > ay) {
-        // Horizontal swipe = TURN
-        if (dx > 0) this.onTurnRight();
-        else this.onTurnLeft();
+        // Horizontal = TURN
+        if (dx > 0) this.handleTurn('right');
+        else this.handleTurn('left');
       } else {
-        // Vertical swipe = jump/slide
-        if (dy < 0) this.player.jump();
-        else this.player.slide();
+        // Vertical = jump/slide
+        if (dy < 0) { this.player.jump(); AudioManager.play('jump'); }
+        else { this.player.slide(); AudioManager.play('slide'); }
       }
     }, { passive: false });
 
+    // Keyboard
     window.addEventListener('keydown', e => {
       if (this.state !== State.PLAYING) return;
       switch (e.key) {
-        case 'ArrowLeft': case 'a': this.onTurnLeft(); break;
-        case 'ArrowRight': case 'd': this.onTurnRight(); break;
-        case 'ArrowUp': case 'w': case ' ': this.player.jump(); break;
-        case 'ArrowDown': case 's': this.player.slide(); break;
+        case 'ArrowLeft': case 'a': this.handleTurn('left'); break;
+        case 'ArrowRight': case 'd': this.handleTurn('right'); break;
+        case 'ArrowUp': case 'w': case ' ': this.player.jump(); AudioManager.play('jump'); break;
+        case 'ArrowDown': case 's': this.player.slide(); AudioManager.play('slide'); break;
         case 'Escape': this.pause(); break;
       }
     });
   }
 
-  wireUI() {
-    document.getElementById('btn-play').addEventListener('click', () => {
-      this.initAudio();
-      this.startGame();
-    });
-    document.getElementById('btn-retry').addEventListener('click', () => this.startGame());
-    document.getElementById('btn-go-menu').addEventListener('click', () => {
-      this.showScreen('title');
-      this.state = State.TITLE;
-    });
-    document.getElementById('btn-resume').addEventListener('click', () => this.resume());
-    document.getElementById('btn-restart').addEventListener('click', () => this.startGame());
-    document.getElementById('btn-pause-menu').addEventListener('click', () => {
-      this.showScreen('title');
-      this.state = State.TITLE;
-    });
-    document.getElementById('hud-pause').addEventListener('click', e => {
-      e.stopPropagation();
-      this.pause();
-    });
-    document.getElementById('btn-settings-open').addEventListener('click', () => this.showScreen('settings'));
-    document.getElementById('btn-settings-back').addEventListener('click', () => this.showScreen('title'));
-  }
+  handleTurn(dir) {
+    const playerPos = this.player.getPosition();
+    const currentSeg = this.track.getCurrentSegment(playerPos);
+    if (!currentSeg) return;
 
-  onTurnLeft() {
-    const seg = this.track.getCurrentSegment(this.player.getPosition());
-    if (!seg) return;
+    const nextSeg = this.track.getNextSegment(currentSeg);
+    if (!nextSeg) return;
 
-    // Check if the next segment exists and requires a left turn
-    const nextSeg = this.track.getNextSegment(seg);
-    if (nextSeg && seg.complete) {
-      const expectedDir = (seg.direction - 1 + 4) % 4;
-      if (nextSeg.direction === expectedDir) {
-        this.player.turnLeft();
-        // Snap player to the turn point
-        this.snapPlayerToTurn(seg);
-        AudioManager.play('laneSwitch');
-        return;
-      }
+    // Is the next segment a turn?
+    const nextDir = nextSeg.direction;
+    const curDir = currentSeg.direction;
+    if (nextDir === curDir) return; // Next is straight, no turn needed
+
+    // Is player in the turn zone?
+    if (!currentSeg.complete) return; // Not close enough to turn yet
+
+    // Check if the turn direction matches
+    const leftDir = (curDir - 1 + 4) % 4;
+    const rightDir = (curDir + 1) % 4;
+
+    if (dir === 'left' && nextDir === leftDir) {
+      this.player.turnLeft();
+      this.snapPlayer(currentSeg);
+      AudioManager.play('laneSwitch');
+    } else if (dir === 'right' && nextDir === rightDir) {
+      this.player.turnRight();
+      this.snapPlayer(currentSeg);
+      AudioManager.play('laneSwitch');
     }
-    // Wrong turn or too early — could penalize
+    // Wrong direction = ignore (they'll crash into wall)
   }
 
-  onTurnRight() {
-    const seg = this.track.getCurrentSegment(this.player.getPosition());
-    if (!seg) return;
-
-    const nextSeg = this.track.getNextSegment(seg);
-    if (nextSeg && seg.complete) {
-      const expectedDir = (seg.direction + 1) % 4;
-      if (nextSeg.direction === expectedDir) {
-        this.player.turnRight();
-        this.snapPlayerToTurn(seg);
-        AudioManager.play('laneSwitch');
-        return;
-      }
-    }
-  }
-
-  snapPlayerToTurn(currentSeg) {
-    // Snap player position to the end of the current segment
-    const endPos = currentSeg.endPos;
+  snapPlayer(seg) {
     const pos = this.player.getPosition();
-    const dir = currentSeg.direction;
-
-    // Align the axis perpendicular to movement direction
-    if (dir === 0 || dir === 2) {
-      pos.x = endPos.x;
+    // Snap to the turn point so player aligns with new corridor
+    if (seg.direction === 0 || seg.direction === 2) {
+      pos.x = seg.endPos.x;
+      pos.z = seg.endPos.z;
     } else {
-      pos.z = endPos.z;
+      pos.x = seg.endPos.x;
+      pos.z = seg.endPos.z;
     }
+  }
+
+  wireUI() {
+    document.getElementById('btn-play').onclick = () => { this.initAudio(); this.startGame(); };
+    document.getElementById('btn-retry').onclick = () => this.startGame();
+    document.getElementById('btn-go-menu').onclick = () => { this.showScreen('title'); this.state = State.TITLE; };
+    document.getElementById('btn-resume').onclick = () => this.resume();
+    document.getElementById('btn-restart').onclick = () => this.startGame();
+    document.getElementById('btn-pause-menu').onclick = () => { this.showScreen('title'); this.state = State.TITLE; AudioManager.stopBGM(); };
+    document.getElementById('hud-pause').onclick = e => { e.stopPropagation(); this.pause(); };
+    document.getElementById('btn-settings-open').onclick = () => this.showScreen('settings');
+    document.getElementById('btn-settings-back').onclick = () => this.showScreen('title');
   }
 
   initAudio() {
-    if (!this.audioInitialized) {
-      AudioManager.init();
-      this.audioInitialized = true;
-    }
+    if (!this.audioInitialized) { AudioManager.init(); this.audioInitialized = true; }
     AudioManager.resumeContext();
   }
 
   async startGame() {
     this.initAudio();
-
-    this.score = 0;
-    this.coins = 0;
-    this.distance = 0;
-    this.lives = 3;
+    this.score = 0; this.coins = 0; this.distance = 0; this.lives = 3;
 
     this.track.reset();
     this.track.init();
-
     await this.player.init(this.scene);
+
+    // Initialize camera position behind player
+    const pp = this.player.getPosition();
+    this.camPos.set(pp.x, pp.y + 2.2, pp.z + 4);
+    this.camLook.set(pp.x, pp.y + 1, pp.z - 3);
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
 
     this.state = State.PLAYING;
     this.showScreen('hud');
     AudioManager.playBGM();
-
     this.updateHUD();
   }
 
@@ -304,68 +247,56 @@ class Game {
     AudioManager.resumeBGM();
   }
 
-  loop(timestamp) {
+  loop(ts) {
     requestAnimationFrame(t => this.loop(t));
+    const delta = Math.min((ts - this.lastTime) / 1000, 0.05); // cap at 50ms
+    this.lastTime = ts;
 
-    const delta = Math.min((timestamp - this.lastTime) / 1000, 0.1);
-    this.lastTime = timestamp;
-
-    if (this.state === State.PLAYING) {
-      this.updatePlaying(delta);
-    }
+    if (this.state === State.PLAYING) this.updatePlaying(delta);
 
     this.composer.render();
   }
 
   updatePlaying(delta) {
     const speed = this.track.getSpeed();
-    const playerPos = this.player.getPosition();
+    const pp = this.player.getPosition();
 
-    // Update track
-    this.track.update(delta, playerPos);
-
-    // Update player
+    this.track.update(delta, pp);
     this.player.update(delta, speed);
 
-    // Distance & score
     this.distance += speed * delta;
     this.score = Math.floor(this.distance) * 10;
 
-    // Update effects
-    this.effects.update(delta);
+    // Check missed turn
+    const seg = this.track.getCurrentSegment(pp);
+    if (seg) {
+      const next = this.track.getNextSegment(seg);
+      if (next && seg.checkOvershot(pp) && next.direction !== seg.direction) {
+        // Player missed the turn — take damage and auto-correct
+        if (this.player.getDirection() === seg.direction) {
+          this.lives--;
+          this.player.hit();
+          AudioManager.play('hit');
 
-    // Check if player missed a turn (overshot)
-    const currentSeg = this.track.getCurrentSegment(playerPos);
-    if (currentSeg && currentSeg.checkOvershot(playerPos)) {
-      const nextSeg = this.track.getNextSegment(currentSeg);
-      if (nextSeg && nextSeg.direction !== currentSeg.direction) {
-        // Player missed the turn!
-        if (this.player.getDirection() === currentSeg.direction) {
-          this.onPlayerHit();
-          // Force the turn
-          if (nextSeg.direction === (currentSeg.direction - 1 + 4) % 4) {
-            this.player.turnLeft();
-          } else {
-            this.player.turnRight();
-          }
-          this.snapPlayerToTurn(currentSeg);
+          // Auto-turn to survive
+          const leftDir = (seg.direction - 1 + 4) % 4;
+          if (next.direction === leftDir) this.player.turnLeft();
+          else this.player.turnRight();
+          this.snapPlayer(seg);
+
+          if (this.lives <= 0) { this.onDeath(); return; }
         }
       }
     }
 
-    // Camera follow — behind and above player based on direction
+    // Camera: behind and slightly above player, follows direction
     this.updateCamera(delta);
 
-    // Move lights with player
-    this.dirLight.position.set(
-      playerPos.x + 3, playerPos.y + 8, playerPos.z + 5
-    );
-    this.dirLight.target.position.copy(playerPos);
-    this.dirLight.target.updateMatrixWorld();
+    // Move lights
+    this.dirLight.position.set(pp.x + 2, pp.y + 6, pp.z + 3);
+    this.dirLight.target.position.copy(pp);
+    this.playerLight.position.set(pp.x, pp.y + 1.5, pp.z);
 
-    this.playerLight.position.set(playerPos.x, playerPos.y + 2, playerPos.z);
-
-    // HUD
     this.updateHUD();
   }
 
@@ -373,52 +304,39 @@ class Game {
     const pos = this.player.getPosition();
     const dir = this.player.getDirection();
 
-    // Camera offset based on current direction
-    const behind = DIR_VECTORS[dir].clone().multiplyScalar(-5);
-    const targetCamPos = new THREE.Vector3(
+    // Camera behind player: 4 units back, 2.2 units up
+    const behind = DIR_VECTORS[dir].clone().multiplyScalar(-4);
+    const targetPos = new THREE.Vector3(
       pos.x + behind.x,
-      pos.y + 3,
+      pos.y + 2.2,
       pos.z + behind.z
     );
 
-    // Smooth follow
-    this.camera.position.lerp(targetCamPos, delta * 8);
-
-    // Look slightly ahead of player
-    const ahead = DIR_VECTORS[dir].clone().multiplyScalar(4);
-    const lookTarget = new THREE.Vector3(
+    // Look ahead: 3 units forward, 1 unit up
+    const ahead = DIR_VECTORS[dir].clone().multiplyScalar(3);
+    const targetLook = new THREE.Vector3(
       pos.x + ahead.x,
       pos.y + 1,
       pos.z + ahead.z
     );
-    // Smooth look
-    const currentLook = new THREE.Vector3();
-    this.camera.getWorldDirection(currentLook);
-    this.camera.lookAt(lookTarget);
-  }
 
-  onPlayerHit() {
-    this.lives--;
-    this.effects.shakeScreen(0.4);
-    this.effects.emitHit(this.player.getPosition());
-    AudioManager.play('hit');
+    // Smooth interpolation (fast enough to feel responsive)
+    const lerpSpeed = delta * 10;
+    this.camPos.lerp(targetPos, Math.min(lerpSpeed, 1));
+    this.camLook.lerp(targetLook, Math.min(lerpSpeed, 1));
 
-    if (this.lives <= 0) {
-      this.onDeath();
-    } else {
-      this.player.hit();
-    }
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
   }
 
   onDeath() {
     this.state = State.GAME_OVER;
     this.player.die();
-    this.effects.emitDeath(this.player.getPosition(), 0xE24B4A);
     AudioManager.play('gameOver');
     AudioManager.stopBGM();
 
-    const isNewHigh = this.score > SaveManager.getHighScore();
-    if (isNewHigh) SaveManager.setHighScore(this.score);
+    const isNew = this.score > SaveManager.getHighScore();
+    if (isNew) SaveManager.setHighScore(this.score);
     SaveManager.addCoins(this.coins);
     SaveManager.addRun(Math.floor(this.distance));
 
@@ -428,23 +346,20 @@ class Game {
       document.getElementById('go-distance').textContent = Math.floor(this.distance) + 'm';
       document.getElementById('go-coins').textContent = this.coins;
       const nb = document.getElementById('go-newbest');
-      if (isNewHigh) nb.classList.remove('hidden');
-      else nb.classList.add('hidden');
+      if (isNew) nb.classList.remove('hidden'); else nb.classList.add('hidden');
+      document.getElementById('title-highscore').textContent = SaveManager.getHighScore();
       this.showScreen('gameover');
-    }, 1200);
+    }, 1000);
   }
 
   updateHUD() {
     document.getElementById('hud-score').textContent = this.score.toLocaleString();
     document.getElementById('hud-distance').textContent = Math.floor(this.distance) + 'm';
     document.getElementById('hud-coin-count').textContent = this.coins;
-
-    const livesEl = document.getElementById('hud-lives');
-    let html = '';
-    for (let i = 0; i < 3; i++) {
-      html += `<span class="life-icon${i >= this.lives ? ' lost' : ''}">&#10084;</span>`;
-    }
-    livesEl.innerHTML = html;
+    const el = document.getElementById('hud-lives');
+    let h = '';
+    for (let i = 0; i < 3; i++) h += `<span class="life-icon${i >= this.lives ? ' lost' : ''}">&#10084;</span>`;
+    el.innerHTML = h;
   }
 
   showScreen(id) {
@@ -455,15 +370,12 @@ class Game {
 
   onResize() {
     const w = window.innerWidth, h = window.innerHeight;
-    const pr = Math.min(window.devicePixelRatio, 2);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
-    if (this.fxaaPass) this.fxaaPass.uniforms['resolution'].value.set(1/(w*pr), 1/(h*pr));
     if (this.bloomPass) this.bloomPass.resolution.set(w, h);
   }
 }
 
-const game = new Game();
-game.init();
+new Game().init();
