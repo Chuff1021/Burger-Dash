@@ -1,349 +1,265 @@
-// game.js — Main game loop, state machine, orchestrator
+// game.js — Temple Run style endless runner: turning corridors
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
-import { SaveManager } from './save.js';
-import { AudioManager } from './audio.js';
-import { CHARACTERS, buildModel } from './characters.js';
 import { Player } from './player.js';
-import { TrackManager, createEnvironmentScene } from './world.js';
-import { ObstacleManager } from './obstacles.js';
-import { CollectibleManager, ComboTracker, PowerUpState } from './collectibles.js';
-import { UIManager } from './ui.js';
+import { TrackManager, DIR_VECTORS } from './track.js';
+import { AudioManager } from './audio.js';
+import { SaveManager } from './save.js';
 import { EffectsManager } from './effects.js';
 
-const GameState = {
-  LOADING: 'LOADING',
-  TITLE: 'TITLE',
-  CHARACTER_SELECT: 'CHARACTER_SELECT',
-  PLAYING: 'PLAYING',
-  PAUSED: 'PAUSED',
-  GAME_OVER: 'GAME_OVER'
+const State = {
+  LOADING: 0,
+  TITLE: 1,
+  PLAYING: 2,
+  PAUSED: 3,
+  GAME_OVER: 4,
 };
 
 class Game {
   constructor() {
-    this.state = GameState.LOADING;
+    this.state = State.LOADING;
     this.score = 0;
-    this.coins = 0;
     this.distance = 0;
+    this.coins = 0;
     this.lives = 3;
-    this.maxLives = 3;
     this.lastTime = 0;
-    this.checkpointInterval = 1000;
-    this.nextCheckpoint = 1000;
     this.audioInitialized = false;
-    this.selectedCharacter = 'patty';
-    this.scoreMultiplier = 1;
 
-    // Subsystems
-    this.renderer = null;
-    this.scene = null;
-    this.camera = null;
-    this.track = null;
-    this.player = null;
-    this.obstacles = null;
-    this.collectibles = null;
-    this.combo = null;
-    this.powerUps = null;
-    this.ui = null;
-    this.effects = null;
-    this.input = null;
-    this.envLights = null;
-
-    // Camera target
-    this.cameraBasePos = new THREE.Vector3(0, 5, 8);
-    this.cameraLookTarget = new THREE.Vector3(0, 1, -10);
-
-    // Jetpack state
-    this.jetpackActive = false;
-    this.jetpackTimer = 0;
-    this.jetpackOrigY = 0;
-
-    // Duplicate (Double Stack) state
-    this.duplicateActive = false;
-    this.duplicateModel = null;
-    this.duplicateTimer = 0;
-
-    // Input state
+    // Input
     this.touchStartX = 0;
     this.touchStartY = 0;
     this.touchStartTime = 0;
-    this.lastTapTime = 0;
     this.SWIPE_THRESHOLD = 40;
-    this.SWIPE_TIMEOUT = 300;
-    this.TAP_THRESHOLD = 15;
-    this.DOUBLETAP_INTERVAL = 300;
+    this.SWIPE_TIMEOUT = 400;
   }
 
   async init() {
-    // Load save data
     SaveManager.load();
-    this.selectedCharacter = SaveManager.getSelectedCharacter();
 
-    // Three.js setup — enhanced renderer with shadows and tone mapping
+    // --- Renderer ---
     const canvas = document.getElementById('game-canvas');
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
-      powerPreference: 'high-performance'
+      powerPreference: 'high-performance',
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+    // --- Scene ---
     this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x0a0608);
+    this.scene.fog = new THREE.FogExp2(0x0a0608, 0.025);
 
-    // Camera — closer, lower, more cinematic (Subway Surfers style)
+    // --- Camera (close behind player, Temple Run style) ---
     this.camera = new THREE.PerspectiveCamera(
-      55,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      150
+      65, window.innerWidth / window.innerHeight, 0.1, 100
     );
-    this.cameraBasePos.set(0, 3.5, 6);
-    this.cameraLookTarget.set(0, 1.2, -8);
-    this.camera.position.copy(this.cameraBasePos);
-    this.camera.lookAt(this.cameraLookTarget);
 
-    // --- Post-processing pipeline ---
+    // --- Lighting ---
+    const ambient = new THREE.AmbientLight(0xffeedd, 0.3);
+    this.scene.add(ambient);
+
+    const hemi = new THREE.HemisphereLight(0x8888cc, 0x443322, 0.2);
+    this.scene.add(hemi);
+
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    this.dirLight.position.set(3, 8, 5);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.set(1024, 1024);
+    this.dirLight.shadow.camera.near = 0.5;
+    this.dirLight.shadow.camera.far = 30;
+    this.dirLight.shadow.camera.left = -10;
+    this.dirLight.shadow.camera.right = 10;
+    this.dirLight.shadow.camera.top = 10;
+    this.dirLight.shadow.camera.bottom = -10;
+    this.dirLight.shadow.bias = -0.002;
+    this.scene.add(this.dirLight);
+
+    // Player spotlight
+    this.playerLight = new THREE.PointLight(0xFF8C00, 0.8, 12);
+    this.scene.add(this.playerLight);
+
+    // --- Post-processing ---
     this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    // Base render pass
-    const renderPass = new RenderPass(this.scene, this.camera);
-    this.composer.addPass(renderPass);
-
-    // Bloom for neon signs, coins, power-ups
-    const bloomPass = new UnrealBloomPass(
+    const bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.4,   // strength
-      0.5,   // radius
-      0.7    // threshold
+      0.35, 0.5, 0.75
     );
-    this.composer.addPass(bloomPass);
-    this.bloomPass = bloomPass;
+    this.composer.addPass(bloom);
+    this.bloomPass = bloom;
 
-    // FXAA anti-aliasing
-    const fxaaPass = new ShaderPass(FXAAShader);
-    fxaaPass.uniforms['resolution'].value.set(
-      1 / (window.innerWidth * Math.min(window.devicePixelRatio, 2)),
-      1 / (window.innerHeight * Math.min(window.devicePixelRatio, 2))
+    const fxaa = new ShaderPass(FXAAShader);
+    const pr = Math.min(window.devicePixelRatio, 2);
+    fxaa.uniforms['resolution'].value.set(
+      1 / (window.innerWidth * pr), 1 / (window.innerHeight * pr)
     );
-    this.composer.addPass(fxaaPass);
-    this.fxaaPass = fxaaPass;
+    this.composer.addPass(fxaa);
+    this.fxaaPass = fxaa;
 
-    // Vignette + color grading shader
+    // Vignette
     const vignetteShader = {
       uniforms: {
         tDiffuse: { value: null },
-        darkness: { value: 0.5 },
-        offset: { value: 1.2 },
-        tint: { value: new THREE.Color(1.05, 0.95, 0.9) } // warm tint
+        darkness: { value: 0.6 },
+        offset: { value: 1.1 },
       },
-      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      vertexShader: `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
       fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float darkness;
-        uniform float offset;
-        uniform vec3 tint;
-        varying vec2 vUv;
-        void main() {
-          vec4 texel = texture2D(tDiffuse, vUv);
-          vec2 uv = (vUv - vec2(0.5)) * vec2(offset);
-          float vignette = clamp(1.0 - dot(uv, uv), 0.0, 1.0);
-          texel.rgb *= mix(vec3(1.0 - darkness), vec3(1.0), vignette);
-          texel.rgb *= tint;
-          gl_FragColor = texel;
-        }
+        uniform sampler2D tDiffuse;uniform float darkness;uniform float offset;varying vec2 vUv;
+        void main(){vec4 c=texture2D(tDiffuse,vUv);vec2 u=(vUv-0.5)*vec2(offset);
+        c.rgb*=mix(vec3(1.0-darkness),vec3(1.0),clamp(1.0-dot(u,u),0.0,1.0));
+        c.rgb*=vec3(1.03,0.97,0.92);gl_FragColor=c;}
       `
     };
-    const vignettePass = new ShaderPass(vignetteShader);
-    this.composer.addPass(vignettePass);
+    this.composer.addPass(new ShaderPass(vignetteShader));
 
-    // Environment (lights, fog, background)
-    this.envLights = createEnvironmentScene(this.scene);
-
-    // Initialize subsystems
+    // --- Subsystems ---
     this.track = new TrackManager(this.scene);
     this.player = new Player();
-    this.obstacles = new ObstacleManager();
-    this.obstacles.init(this.scene);
-    this.collectibles = new CollectibleManager();
-    this.collectibles.init(this.scene);
-    this.combo = new ComboTracker();
-    this.powerUps = new PowerUpState();
     this.effects = new EffectsManager();
     this.effects.init(this.scene, this.camera);
-    this.ui = new UIManager();
-    this.ui.init();
 
-    // Wire UI events
-    this.wireUIEvents();
-
-    // Wire input
+    // --- Input ---
     this.wireInput(canvas);
-
-    // Handle resize
     window.addEventListener('resize', () => this.onResize());
 
+    // --- UI Events ---
+    this.wireUI();
+
     // Show title
-    this.state = GameState.TITLE;
-    this.ui.showScreen('title');
+    this.state = State.TITLE;
+    this.showScreen('title');
 
-    // Start render loop
+    // Render loop
     this.lastTime = performance.now();
-    requestAnimationFrame((t) => this.loop(t));
+    requestAnimationFrame(t => this.loop(t));
   }
 
-  wireUIEvents() {
-    this.ui.onPlay = () => {
-      this.initAudio();
-      this.ui.showScreen('charselect');
-      this.ui.initCharacterSelect();
-      this.state = GameState.CHARACTER_SELECT;
-    };
-
-    this.ui.onCharacterSelected = (charId) => {
-      this.initAudio();
-      this.selectedCharacter = charId;
-      this.startGame(charId);
-    };
-
-    this.ui.onPause = () => {
-      if (this.state === GameState.PLAYING) {
-        this.state = GameState.PAUSED;
-        this.ui.showPause();
-        AudioManager.pauseBGM();
-      }
-    };
-
-    this.ui.onResume = () => {
-      this.state = GameState.PLAYING;
-      this.ui.showScreen('hud');
-      AudioManager.resumeBGM();
-    };
-
-    this.ui.onRestart = () => {
-      this.startGame(this.selectedCharacter);
-    };
-
-    this.ui.onMenu = () => {
-      this.state = GameState.TITLE;
-      AudioManager.stopBGM();
-      this.cleanup();
-    };
-
-    this.ui.onSettingsChange = (key, value) => {
-      if (key === 'musicVolume') AudioManager.setMusicVolume(value);
-      if (key === 'sfxVolume') AudioManager.setSFXVolume(value);
-    };
-  }
-
-  wireInput(element) {
-    element.addEventListener('touchstart', (e) => {
+  wireInput(el) {
+    el.addEventListener('touchstart', e => {
       e.preventDefault();
-      if (this.state !== GameState.PLAYING) return;
+      if (this.state !== State.PLAYING) return;
       this.touchStartX = e.changedTouches[0].clientX;
       this.touchStartY = e.changedTouches[0].clientY;
       this.touchStartTime = performance.now();
     }, { passive: false });
 
-    element.addEventListener('touchend', (e) => {
+    el.addEventListener('touchend', e => {
       e.preventDefault();
-      if (this.state !== GameState.PLAYING) return;
-
+      if (this.state !== State.PLAYING) return;
       const dx = e.changedTouches[0].clientX - this.touchStartX;
       const dy = e.changedTouches[0].clientY - this.touchStartY;
       const dt = performance.now() - this.touchStartTime;
-
       if (dt > this.SWIPE_TIMEOUT) return;
 
-      const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+      if (ax < this.SWIPE_THRESHOLD && ay < this.SWIPE_THRESHOLD) return;
 
-      // Tap detection
-      if (absDx < this.TAP_THRESHOLD && absDy < this.TAP_THRESHOLD) {
-        const now = performance.now();
-        if (now - this.lastTapTime < this.DOUBLETAP_INTERVAL) {
-          this.onDoubleTap();
-          this.lastTapTime = 0;
-        } else {
-          this.lastTapTime = now;
-        }
-        return;
-      }
-
-      // Swipe detection
-      if (absDx > absDy && absDx > this.SWIPE_THRESHOLD) {
-        if (dx > 0) {
-          this.player.moveRight();
-          AudioManager.play('laneSwitch');
-        } else {
-          this.player.moveLeft();
-          AudioManager.play('laneSwitch');
-        }
-      } else if (absDy > absDx && absDy > this.SWIPE_THRESHOLD) {
-        if (dy < 0) {
-          this.player.jump();
-          AudioManager.playCharacterSound(this.selectedCharacter, 'jump');
-        } else {
-          this.player.slide();
-          AudioManager.play('slide');
-        }
+      if (ax > ay) {
+        // Horizontal swipe = TURN
+        if (dx > 0) this.onTurnRight();
+        else this.onTurnLeft();
+      } else {
+        // Vertical swipe = jump/slide
+        if (dy < 0) this.player.jump();
+        else this.player.slide();
       }
     }, { passive: false });
 
-    // Keyboard fallback for desktop testing
-    window.addEventListener('keydown', (e) => {
-      if (this.state !== GameState.PLAYING) return;
-
+    window.addEventListener('keydown', e => {
+      if (this.state !== State.PLAYING) return;
       switch (e.key) {
-        case 'ArrowLeft':
-        case 'a':
-          this.player.moveLeft();
-          AudioManager.play('laneSwitch');
-          break;
-        case 'ArrowRight':
-        case 'd':
-          this.player.moveRight();
-          AudioManager.play('laneSwitch');
-          break;
-        case 'ArrowUp':
-        case 'w':
-        case ' ':
-          this.player.jump();
-          AudioManager.playCharacterSound(this.selectedCharacter, 'jump');
-          break;
-        case 'ArrowDown':
-        case 's':
-          this.player.slide();
-          AudioManager.play('slide');
-          break;
-        case 'Escape':
-          if (this.state === GameState.PLAYING) {
-            this.ui.onPause();
-          }
-          break;
-        case 'e':
-          this.onDoubleTap();
-          break;
+        case 'ArrowLeft': case 'a': this.onTurnLeft(); break;
+        case 'ArrowRight': case 'd': this.onTurnRight(); break;
+        case 'ArrowUp': case 'w': case ' ': this.player.jump(); break;
+        case 'ArrowDown': case 's': this.player.slide(); break;
+        case 'Escape': this.pause(); break;
       }
     });
   }
 
-  onDoubleTap() {
-    if (this.player.isAbilityReady()) {
-      const activated = this.player.activateAbility();
-      if (activated) {
-        this.activateSpecialAbility();
+  wireUI() {
+    document.getElementById('btn-play').addEventListener('click', () => {
+      this.initAudio();
+      this.startGame();
+    });
+    document.getElementById('btn-retry').addEventListener('click', () => this.startGame());
+    document.getElementById('btn-go-menu').addEventListener('click', () => {
+      this.showScreen('title');
+      this.state = State.TITLE;
+    });
+    document.getElementById('btn-resume').addEventListener('click', () => this.resume());
+    document.getElementById('btn-restart').addEventListener('click', () => this.startGame());
+    document.getElementById('btn-pause-menu').addEventListener('click', () => {
+      this.showScreen('title');
+      this.state = State.TITLE;
+    });
+    document.getElementById('hud-pause').addEventListener('click', e => {
+      e.stopPropagation();
+      this.pause();
+    });
+    document.getElementById('btn-settings-open').addEventListener('click', () => this.showScreen('settings'));
+    document.getElementById('btn-settings-back').addEventListener('click', () => this.showScreen('title'));
+  }
+
+  onTurnLeft() {
+    const seg = this.track.getCurrentSegment(this.player.getPosition());
+    if (!seg) return;
+
+    // Check if the next segment exists and requires a left turn
+    const nextSeg = this.track.getNextSegment(seg);
+    if (nextSeg && seg.complete) {
+      const expectedDir = (seg.direction - 1 + 4) % 4;
+      if (nextSeg.direction === expectedDir) {
+        this.player.turnLeft();
+        // Snap player to the turn point
+        this.snapPlayerToTurn(seg);
+        AudioManager.play('laneSwitch');
+        return;
       }
+    }
+    // Wrong turn or too early — could penalize
+  }
+
+  onTurnRight() {
+    const seg = this.track.getCurrentSegment(this.player.getPosition());
+    if (!seg) return;
+
+    const nextSeg = this.track.getNextSegment(seg);
+    if (nextSeg && seg.complete) {
+      const expectedDir = (seg.direction + 1) % 4;
+      if (nextSeg.direction === expectedDir) {
+        this.player.turnRight();
+        this.snapPlayerToTurn(seg);
+        AudioManager.play('laneSwitch');
+        return;
+      }
+    }
+  }
+
+  snapPlayerToTurn(currentSeg) {
+    // Snap player position to the end of the current segment
+    const endPos = currentSeg.endPos;
+    const pos = this.player.getPosition();
+    const dir = currentSeg.direction;
+
+    // Align the axis perpendicular to movement direction
+    if (dir === 0 || dir === 2) {
+      pos.x = endPos.x;
+    } else {
+      pos.z = endPos.z;
     }
   }
 
@@ -355,394 +271,199 @@ class Game {
     AudioManager.resumeContext();
   }
 
-  async startGame(charId) {
-    this.cleanup();
+  async startGame() {
+    this.initAudio();
 
     this.score = 0;
     this.coins = 0;
     this.distance = 0;
-    this.lives = this.maxLives;
-    this.nextCheckpoint = this.checkpointInterval;
-    this.scoreMultiplier = 1;
-    this.jetpackActive = false;
-    this.duplicateActive = false;
-
-    this.combo.reset();
-    this.powerUps.reset();
+    this.lives = 3;
 
     this.track.reset();
     this.track.init();
-    this.obstacles.reset();
-    this.collectibles.reset();
-    this.effects.deactivateAura();
 
-    await this.player.init(charId, this.scene);
-    this.selectedCharacter = charId;
+    await this.player.init(this.scene);
 
-    this.state = GameState.PLAYING;
-    this.ui.showScreen('hud');
-    AudioManager.play('menuConfirm');
+    this.state = State.PLAYING;
+    this.showScreen('hud');
     AudioManager.playBGM();
+
+    this.updateHUD();
   }
 
-  cleanup() {
-    // Remove player model
-    if (this.player.model) {
-      this.scene.remove(this.player.model);
-    }
-    // Remove duplicate if exists
-    if (this.duplicateModel) {
-      this.scene.remove(this.duplicateModel);
-      this.duplicateModel = null;
-    }
-    this.track.reset();
-    this.obstacles.reset();
-    this.collectibles.reset();
+  pause() {
+    if (this.state !== State.PLAYING) return;
+    this.state = State.PAUSED;
+    this.showScreen('pause');
+    AudioManager.pauseBGM();
+  }
+
+  resume() {
+    this.state = State.PLAYING;
+    this.showScreen('hud');
+    AudioManager.resumeBGM();
   }
 
   loop(timestamp) {
-    requestAnimationFrame((t) => this.loop(t));
+    requestAnimationFrame(t => this.loop(t));
 
     const delta = Math.min((timestamp - this.lastTime) / 1000, 0.1);
     this.lastTime = timestamp;
 
-    switch (this.state) {
-      case GameState.PLAYING:
-        this.updatePlaying(delta, timestamp / 1000);
-        break;
-      case GameState.CHARACTER_SELECT:
-        this.ui.updateCharacterPreview(delta);
-        break;
-      case GameState.GAME_OVER:
-        // Still render but don't update gameplay
-        break;
+    if (this.state === State.PLAYING) {
+      this.updatePlaying(delta);
     }
 
     this.composer.render();
   }
 
-  updatePlaying(delta, time) {
+  updatePlaying(delta) {
     const speed = this.track.getSpeed();
-
-    // Update distance
-    this.distance += speed * delta;
-    const distanceInt = Math.floor(this.distance);
-    this.score = distanceInt * 10 * this.scoreMultiplier;
-
-    // Update all systems
-    this.track.update(delta);
-    this.player.update(delta, time);
-    this.obstacles.update(delta, speed, this.distance);
-    this.collectibles.update(delta, speed, this.player.getPosition());
-    this.effects.update(delta);
-    this.powerUps.update(delta);
-
-    // Jetpack flight
-    if (this.jetpackActive) {
-      this.jetpackTimer -= delta * 1000;
-      if (this.jetpackTimer <= 0) {
-        this.jetpackActive = false;
-        // Land the player
-      } else {
-        // Float the player above the track
-        this.player.model.position.y = THREE.MathUtils.lerp(
-          this.player.model.position.y, 6, delta * 3
-        );
-      }
-    }
-
-    // Duplicate character (Double Stack ability)
-    if (this.duplicateActive) {
-      this.duplicateTimer -= delta * 1000;
-      if (this.duplicateTimer <= 0) {
-        this.duplicateActive = false;
-        if (this.duplicateModel) {
-          this.scene.remove(this.duplicateModel);
-          this.duplicateModel = null;
-        }
-      } else if (this.duplicateModel) {
-        // Mirror player position but offset
-        this.duplicateModel.position.set(
-          this.player.getPosition().x + 1.5,
-          this.player.getPosition().y,
-          this.player.getPosition().z - 1
-        );
-        this.duplicateModel.rotation.y = this.player.model.rotation.y;
-      }
-    }
-
-    // Fire trail ability (Blaze)
-    if (this.player.isAbilityActive() && this.selectedCharacter === 'blaze') {
-      this.obstacles.destroyInPath(this.player.getPosition().x, this.player.getPosition().z);
-      // Fire particles
-      if (Math.random() > 0.5) {
-        this.effects.emitPowerUp(
-          this.player.getPosition().clone().add(new THREE.Vector3(0, 0, 1)),
-          0xFF4500
-        );
-      }
-    }
-
-    // Sauce Flood ability (Saucy)
-    if (this.player.isAbilityActive() && this.selectedCharacter === 'saucy') {
-      this.obstacles.slowAll(0.2);
-    } else if (!this.player.isAbilityActive() && this.selectedCharacter === 'saucy') {
-      this.obstacles.resetSlow();
-    }
-
-    // Brain Freeze ability (Frosty)
-    if (this.player.isAbilityActive() && this.selectedCharacter === 'frosty') {
-      this.obstacles.freezeAll();
-    } else if (!this.player.isAbilityActive() && this.selectedCharacter === 'frosty' && this.obstacles.frozen) {
-      this.obstacles.unfreezeAll();
-    }
-
-    // Magnet powerup
-    if (this.powerUps.isActive('magnet')) {
-      const magnetBonus = CHARACTERS[this.selectedCharacter].stats.magnet;
-      this.collectibles.setMagnetActive(true, 5 + magnetBonus);
-    } else {
-      this.collectibles.setMagnetActive(false);
-    }
-
-    // Score doubler powerup
-    this.scoreMultiplier = this.powerUps.isActive('scoreDoubler') ? 2 : 1;
-
-    // Collision: obstacles
-    if (!this.player.isInvincible() && !this.jetpackActive) {
-      const hit = this.obstacles.checkCollision(this.player.getCollisionBox());
-      if (hit) {
-        // Check shield first
-        if (this.powerUps.consumeShield()) {
-          this.effects.emitPowerUp(this.player.getPosition(), 0x44FF44);
-          AudioManager.play('powerUp');
-          this.obstacles.release(hit);
-        } else {
-          this.onPlayerHit();
-        }
-      }
-    }
-
-    // Collision: collectibles
-    const collected = this.collectibles.checkCollection(this.player.getCollisionBox());
-    for (const item of collected) {
-      this.onCollect(item);
-    }
-
-    // Checkpoint
-    if (this.distance >= this.nextCheckpoint) {
-      this.onCheckpoint();
-    }
-
-    // Update ability aura
-    if (this.player.isAbilityActive()) {
-      const config = CHARACTERS[this.selectedCharacter];
-      this.effects.activateAura(config.ability.color);
-      this.effects.updateAura(delta, this.player.getPosition());
-    } else {
-      this.effects.deactivateAura();
-    }
-
-    // Speed lines
-    this.effects.setSpeedLines(speed, 35);
-
-    // Camera follow — smooth, cinematic, tracks player lane
     const playerPos = this.player.getPosition();
-    const targetCamX = playerPos.x * 0.4;
-    const targetCamY = this.jetpackActive ? 8 : this.cameraBasePos.y;
-    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, delta * 6);
-    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetCamY, delta * 4);
 
-    // Look target tracks player slightly
-    const lookTarget = this.cameraLookTarget.clone();
-    lookTarget.x = playerPos.x * 0.3;
-    lookTarget.y = playerPos.y + 1.2;
-    this.camera.lookAt(lookTarget);
+    // Update track
+    this.track.update(delta, playerPos);
 
-    // Move warm light with player
-    if (this.envLights && this.envLights.warmLight) {
-      this.envLights.warmLight.position.x = this.player.getPosition().x;
-    }
+    // Update player
+    this.player.update(delta, speed);
 
-    // Update HUD
-    this.ui.updateHUD({
-      score: this.score,
-      coins: this.coins,
-      distance: distanceInt,
-      lives: this.lives,
-      combo: this.combo.multiplier,
-      abilityCharge: this.player.getAbilityCharge()
-    });
+    // Distance & score
+    this.distance += speed * delta;
+    this.score = Math.floor(this.distance) * 10;
 
-    // Update powerup indicator
-    let hasActivePowerup = false;
-    let powerupProgress = 0;
-    for (const type of ['coinMultiplier', 'magnet', 'scoreDoubler', 'jetpack']) {
-      if (this.powerUps.isActive(type)) {
-        hasActivePowerup = true;
-        const remaining = this.powerUps.getRemaining(type);
-        // Rough max for display
-        powerupProgress = Math.max(0, remaining / 15000);
-        break;
+    // Update effects
+    this.effects.update(delta);
+
+    // Check if player missed a turn (overshot)
+    const currentSeg = this.track.getCurrentSegment(playerPos);
+    if (currentSeg && currentSeg.checkOvershot(playerPos)) {
+      const nextSeg = this.track.getNextSegment(currentSeg);
+      if (nextSeg && nextSeg.direction !== currentSeg.direction) {
+        // Player missed the turn!
+        if (this.player.getDirection() === currentSeg.direction) {
+          this.onPlayerHit();
+          // Force the turn
+          if (nextSeg.direction === (currentSeg.direction - 1 + 4) % 4) {
+            this.player.turnLeft();
+          } else {
+            this.player.turnRight();
+          }
+          this.snapPlayerToTurn(currentSeg);
+        }
       }
     }
-    this.ui.showPowerupIndicator(hasActivePowerup, powerupProgress);
+
+    // Camera follow — behind and above player based on direction
+    this.updateCamera(delta);
+
+    // Move lights with player
+    this.dirLight.position.set(
+      playerPos.x + 3, playerPos.y + 8, playerPos.z + 5
+    );
+    this.dirLight.target.position.copy(playerPos);
+    this.dirLight.target.updateMatrixWorld();
+
+    this.playerLight.position.set(playerPos.x, playerPos.y + 2, playerPos.z);
+
+    // HUD
+    this.updateHUD();
+  }
+
+  updateCamera(delta) {
+    const pos = this.player.getPosition();
+    const dir = this.player.getDirection();
+
+    // Camera offset based on current direction
+    const behind = DIR_VECTORS[dir].clone().multiplyScalar(-5);
+    const targetCamPos = new THREE.Vector3(
+      pos.x + behind.x,
+      pos.y + 3,
+      pos.z + behind.z
+    );
+
+    // Smooth follow
+    this.camera.position.lerp(targetCamPos, delta * 8);
+
+    // Look slightly ahead of player
+    const ahead = DIR_VECTORS[dir].clone().multiplyScalar(4);
+    const lookTarget = new THREE.Vector3(
+      pos.x + ahead.x,
+      pos.y + 1,
+      pos.z + ahead.z
+    );
+    // Smooth look
+    const currentLook = new THREE.Vector3();
+    this.camera.getWorldDirection(currentLook);
+    this.camera.lookAt(lookTarget);
   }
 
   onPlayerHit() {
     this.lives--;
-    this.combo.reset();
-    this.effects.shakeScreen(0.5);
+    this.effects.shakeScreen(0.4);
     this.effects.emitHit(this.player.getPosition());
     AudioManager.play('hit');
-    this.player.hit();
 
     if (this.lives <= 0) {
       this.onDeath();
+    } else {
+      this.player.hit();
     }
   }
 
   onDeath() {
-    this.state = GameState.GAME_OVER;
+    this.state = State.GAME_OVER;
     this.player.die();
-
-    const config = CHARACTERS[this.selectedCharacter];
-    this.effects.emitDeath(this.player.getPosition(), config.colors.primary);
+    this.effects.emitDeath(this.player.getPosition(), 0xE24B4A);
     AudioManager.play('gameOver');
     AudioManager.stopBGM();
 
-    // Save stats
     const isNewHigh = this.score > SaveManager.getHighScore();
     if (isNewHigh) SaveManager.setHighScore(this.score);
     SaveManager.addCoins(this.coins);
     SaveManager.addRun(Math.floor(this.distance));
 
-    // Show game over after brief delay
     setTimeout(() => {
-      this.ui.showGameOver({
-        score: this.score,
-        distance: Math.floor(this.distance),
-        coins: this.coins,
-        isNewHighScore: isNewHigh
-      });
+      document.getElementById('go-score').textContent = this.score.toLocaleString();
+      document.getElementById('go-best').textContent = SaveManager.getHighScore().toLocaleString();
+      document.getElementById('go-distance').textContent = Math.floor(this.distance) + 'm';
+      document.getElementById('go-coins').textContent = this.coins;
+      const nb = document.getElementById('go-newbest');
+      if (isNewHigh) nb.classList.remove('hidden');
+      else nb.classList.add('hidden');
+      this.showScreen('gameover');
     }, 1200);
   }
 
-  onCollect(item) {
-    if (item.type === 'coin') {
-      const comboMult = this.combo.collect();
-      const powerupMult = this.powerUps.getCoinMultiplier();
-      const total = item.value * comboMult * powerupMult;
-      this.coins += total;
+  updateHUD() {
+    document.getElementById('hud-score').textContent = this.score.toLocaleString();
+    document.getElementById('hud-distance').textContent = Math.floor(this.distance) + 'm';
+    document.getElementById('hud-coin-count').textContent = this.coins;
 
-      this.effects.emitCoins(item.position);
-      AudioManager.play('coinCollect');
-
-      // Ability charge from coins
-      this.player.addAbilityCharge(1);
-
-      if (comboMult > 1) {
-        this.effects.showComboText(comboMult);
-      }
-      if (comboMult >= 2 && this.combo.streak === this.combo.thresholds[0]) {
-        AudioManager.play('comboUp');
-      }
-    } else if (item.type === 'powerup') {
-      this.effects.emitPowerUp(item.position, item.color);
-      AudioManager.play('powerUp');
-
-      switch (item.effect) {
-        case 'coinMultiplier':
-          this.powerUps.activate('coinMultiplier', item.duration);
-          break;
-        case 'jetpack':
-          this.jetpackActive = true;
-          this.jetpackTimer = item.duration;
-          break;
-        case 'shield':
-          this.powerUps.activate('shield', 0);
-          break;
-        case 'magnet':
-          this.powerUps.activate('magnet', item.duration);
-          break;
-        case 'scoreDoubler':
-          this.powerUps.activate('scoreDoubler', item.duration);
-          break;
-        case 'abilityCharge':
-          this.player.addAbilityCharge(25);
-          break;
-      }
+    const livesEl = document.getElementById('hud-lives');
+    let html = '';
+    for (let i = 0; i < 3; i++) {
+      html += `<span class="life-icon${i >= this.lives ? ' lost' : ''}">&#10084;</span>`;
     }
+    livesEl.innerHTML = html;
   }
 
-  activateSpecialAbility() {
-    const charId = this.selectedCharacter;
-    AudioManager.play('abilityActivate');
-
-    switch (charId) {
-      case 'patty':
-        // Double Stack — create duplicate
-        this.duplicateActive = true;
-        this.duplicateTimer = CHARACTERS.patty.ability.duration;
-        this.duplicateModel = buildModel('patty');
-        this.duplicateModel.position.copy(this.player.getPosition());
-        this.duplicateModel.position.x += 1.5;
-        this.scene.add(this.duplicateModel);
-        break;
-
-      case 'crispy':
-        // Crispy Dash — invincible speed burst
-        // Player is invincible via abilityActive flag
-        // Visual: orange aura handled by aura system
-        break;
-
-      case 'frosty':
-        // Brain Freeze — handled in update loop
-        break;
-
-      case 'blaze':
-        // Five Alarm — handled in update loop
-        break;
-
-      case 'saucy':
-        // Sauce Flood — handled in update loop
-        break;
-
-      case 'turbo':
-        // Warp Drive — teleport 200m ahead
-        this.distance += 200;
-        this.score += 2000;
-        // Visual warp effect
-        this.effects.emitPowerUp(this.player.getPosition(), 0x00BFFF);
-        this.effects.shakeScreen(0.3);
-        break;
-    }
-  }
-
-  onCheckpoint() {
-    this.nextCheckpoint += this.checkpointInterval;
-    this.effects.showCheckpoint(Math.floor(this.distance));
-    this.effects.emitCheckpoint(this.player.getPosition());
-    AudioManager.play('checkpoint');
+  showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const el = document.getElementById('screen-' + id) || document.getElementById(id);
+    if (el) el.classList.add('active');
   }
 
   onResize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = window.innerWidth, h = window.innerHeight;
     const pr = Math.min(window.devicePixelRatio, 2);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
-    if (this.fxaaPass) {
-      this.fxaaPass.uniforms['resolution'].value.set(1 / (w * pr), 1 / (h * pr));
-    }
-    if (this.bloomPass) {
-      this.bloomPass.resolution.set(w, h);
-    }
+    if (this.fxaaPass) this.fxaaPass.uniforms['resolution'].value.set(1/(w*pr), 1/(h*pr));
+    if (this.bloomPass) this.bloomPass.resolution.set(w, h);
   }
 }
 
-// Bootstrap
 const game = new Game();
 game.init();
