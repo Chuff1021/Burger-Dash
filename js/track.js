@@ -1,85 +1,113 @@
-// track.js — Temple Run turning corridor system (optimized)
+// track.js — Temple Run turning corridor system with turn openings
 import * as THREE from 'three';
 
 export const ROAD_LENGTH = 20;
 export const ROAD_WIDTH = 4;
+const WALL_HEIGHT = 3;
+const OPENING_SIZE = 5; // gap in wall at turn points
 
-// Direction vectors for each cardinal direction
 export const DIR_VECTORS = [
-  new THREE.Vector3(0, 0, -1),   // 0: Z-negative (default forward)
-  new THREE.Vector3(1, 0, 0),    // 1: X-positive (right)
-  new THREE.Vector3(0, 0, 1),    // 2: Z-positive (backward)
-  new THREE.Vector3(-1, 0, 0),   // 3: X-negative (left)
+  new THREE.Vector3(0, 0, -1),  // 0: Z- (default forward)
+  new THREE.Vector3(1, 0, 0),   // 1: X+ (right)
+  new THREE.Vector3(0, 0, 1),   // 2: Z+ (backward)
+  new THREE.Vector3(-1, 0, 0),  // 3: X- (left)
 ];
 
-// Shared geometries (created once, reused)
-let sharedRoadGeo = null;
-let sharedWallGeo = null;
-let sharedRoadMat = null;
-let sharedWallMat = null;
+// Shared resources
+let roadMat = null, wallMat = null;
 
-function getSharedGeometries() {
-  if (!sharedRoadGeo) {
-    sharedRoadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LENGTH);
-    sharedWallGeo = new THREE.BoxGeometry(0.3, 3, ROAD_LENGTH);
-  }
-}
+function initMaterials() {
+  if (roadMat) return;
 
-function createRoadTexture() {
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 256;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#665544';
-  ctx.fillRect(0, 0, 128, 256);
+  // Road texture
+  const rc = document.createElement('canvas');
+  rc.width = 128; rc.height = 256;
+  const rctx = rc.getContext('2d');
+  rctx.fillStyle = '#665544';
+  rctx.fillRect(0, 0, 128, 256);
   for (let y = 0; y < 8; y++) {
     for (let x = 0; x < 4; x++) {
       const off = y % 2 === 0 ? 0 : 16;
-      ctx.fillStyle = `rgb(${80+Math.random()*25},${65+Math.random()*20},${50+Math.random()*15})`;
-      ctx.fillRect(x * 32 + off + 1, y * 32 + 1, 30, 30);
+      rctx.fillStyle = `rgb(${80+Math.random()*25},${65+Math.random()*20},${50+Math.random()*15})`;
+      rctx.fillRect(x * 32 + off + 1, y * 32 + 1, 30, 30);
     }
   }
-  ctx.fillStyle = '#FFD700';
-  ctx.fillRect(0, 0, 4, 256);
-  ctx.fillRect(124, 0, 4, 256);
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1, 3);
-  return tex;
-}
+  rctx.fillStyle = '#FFD700';
+  rctx.fillRect(0, 0, 4, 256);
+  rctx.fillRect(124, 0, 4, 256);
+  const rtex = new THREE.CanvasTexture(rc);
+  rtex.wrapS = rtex.wrapT = THREE.RepeatWrapping;
+  rtex.repeat.set(1, 3);
+  roadMat = new THREE.MeshStandardMaterial({ map: rtex, roughness: 0.6, metalness: 0.1 });
 
-function createWallTexture() {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 128;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#443322';
-  ctx.fillRect(0, 0, 64, 128);
+  // Wall texture
+  const wc = document.createElement('canvas');
+  wc.width = 64; wc.height = 128;
+  const wctx = wc.getContext('2d');
+  wctx.fillStyle = '#443322';
+  wctx.fillRect(0, 0, 64, 128);
   for (let y = 0; y < 4; y++) {
     for (let x = 0; x < 2; x++) {
       const off = y % 2 === 0 ? 0 : 16;
-      ctx.fillStyle = `rgb(${55+Math.random()*30},${38+Math.random()*20},${22+Math.random()*15})`;
-      ctx.fillRect(x * 32 + off + 1, y * 32 + 1, 30, 30);
+      wctx.fillStyle = `rgb(${55+Math.random()*30},${38+Math.random()*20},${22+Math.random()*15})`;
+      wctx.fillRect(x * 32 + off + 1, y * 32 + 1, 30, 30);
     }
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1, 3);
-  return tex;
+  const wtex = new THREE.CanvasTexture(wc);
+  wtex.wrapS = wtex.wrapT = THREE.RepeatWrapping;
+  wtex.repeat.set(1, 3);
+  wallMat = new THREE.MeshStandardMaterial({ map: wtex, roughness: 0.8 });
 }
 
-function initSharedMaterials() {
-  if (!sharedRoadMat) {
-    sharedRoadMat = new THREE.MeshStandardMaterial({
-      map: createRoadTexture(), roughness: 0.6, metalness: 0.1
-    });
-    sharedWallMat = new THREE.MeshStandardMaterial({
-      map: createWallTexture(), roughness: 0.8
-    });
+// Build a wall with an optional opening at one end
+// openEnd: null | 'start' | 'end' — which end to leave a gap
+function buildWall(side, openEnd) {
+  const group = new THREE.Group();
+  const x = side * (ROAD_WIDTH / 2 + 0.15);
+
+  if (!openEnd) {
+    // Full wall
+    const wall = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, WALL_HEIGHT, ROAD_LENGTH),
+      wallMat
+    );
+    wall.position.set(x, WALL_HEIGHT / 2, 0);
+    wall.receiveShadow = true;
+    group.add(wall);
+  } else {
+    // Wall with gap — split into two parts
+    const solidLength = ROAD_LENGTH - OPENING_SIZE;
+    const halfSolid = solidLength / 2;
+
+    if (openEnd === 'end') {
+      // Solid from start to (end - opening)
+      const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3, WALL_HEIGHT, solidLength),
+        wallMat
+      );
+      // In local space, z=0 is center. Start is z=+ROAD_LENGTH/2, end is z=-ROAD_LENGTH/2
+      // So "end" opening means gap near z=-ROAD_LENGTH/2
+      wall.position.set(x, WALL_HEIGHT / 2, OPENING_SIZE / 2);
+      wall.receiveShadow = true;
+      group.add(wall);
+    } else {
+      // Solid from (start + opening) to end
+      const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3, WALL_HEIGHT, solidLength),
+        wallMat
+      );
+      wall.position.set(x, WALL_HEIGHT / 2, -OPENING_SIZE / 2);
+      wall.receiveShadow = true;
+      group.add(wall);
+    }
   }
+
+  return group;
 }
 
-// Single road segment — optimized: fewer objects, shared geometry
 class RoadSegment {
-  constructor(direction, position, scene) {
+  constructor(direction, position, scene, turnInfo) {
+    // turnInfo: { nextTurn: 'left'|'right'|'straight'|null, prevTurn: 'left'|'right'|'straight'|null }
     this.direction = direction;
     this.group = new THREE.Group();
     this.nextRoadSpawned = false;
@@ -87,41 +115,51 @@ class RoadSegment {
     this.complete = false;
     this.scene = scene;
 
-    getSharedGeometries();
-    initSharedMaterials();
+    initMaterials();
 
     // Road surface
-    const road = new THREE.Mesh(sharedRoadGeo, sharedRoadMat);
+    const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LENGTH);
+    const road = new THREE.Mesh(roadGeo, roadMat);
     road.rotation.x = -Math.PI / 2;
     road.receiveShadow = true;
     this.group.add(road);
 
-    // Side walls (shared geo + material)
-    const leftWall = new THREE.Mesh(sharedWallGeo, sharedWallMat);
-    leftWall.position.set(-ROAD_WIDTH / 2 - 0.15, 1.5, 0);
-    leftWall.receiveShadow = true;
-    this.group.add(leftWall);
+    // Walls — open at turn points
+    // In local space: the road runs along Z from +ROAD_LENGTH/2 (start) to -ROAD_LENGTH/2 (end)
+    // "end" is the forward end (where player goes next)
+    // Left wall is -X side, Right wall is +X side
+    //
+    // For a RIGHT turn at the end: open the RIGHT wall at the end
+    // For a LEFT turn at the end: open the LEFT wall at the end
 
-    const rightWall = new THREE.Mesh(sharedWallGeo, sharedWallMat);
-    rightWall.position.set(ROAD_WIDTH / 2 + 0.15, 1.5, 0);
-    rightWall.receiveShadow = true;
-    this.group.add(rightWall);
+    let leftOpen = null;
+    let rightOpen = null;
 
-    // Just 2 ceiling beams (not 4+), no shadow casting
-    const beamMat = new THREE.MeshStandardMaterial({ color: 0x554433, roughness: 0.7 });
-    const beamGeo = new THREE.BoxGeometry(ROAD_WIDTH + 0.6, 0.15, 0.25);
-    for (let z = -6; z <= 6; z += 12) {
-      const beam = new THREE.Mesh(beamGeo, beamMat);
-      beam.position.set(0, 3, z);
-      this.group.add(beam);
+    if (turnInfo && turnInfo.nextTurn === 'right') {
+      rightOpen = 'end';  // Open right wall at end for right turn
+    } else if (turnInfo && turnInfo.nextTurn === 'left') {
+      leftOpen = 'end';   // Open left wall at end for left turn
     }
 
-    // ONE light per segment only (performance)
+    const leftWallGroup = buildWall(-1, leftOpen);
+    this.group.add(leftWallGroup);
+
+    const rightWallGroup = buildWall(1, rightOpen);
+    this.group.add(rightWallGroup);
+
+    // One ceiling beam
+    const beamGeo = new THREE.BoxGeometry(ROAD_WIDTH + 0.6, 0.15, 0.25);
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0x554433, roughness: 0.7 });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(0, WALL_HEIGHT, 0);
+    this.group.add(beam);
+
+    // One warm light
     const light = new THREE.PointLight(0xFF8C00, 0.5, 15);
-    light.position.set(0, 2.8, 0);
+    light.position.set(0, 2.5, 0);
     this.group.add(light);
 
-    // Rotate and position
+    // Transform to world space
     this.applyTransform(direction, position);
     scene.add(this.group);
 
@@ -137,7 +175,6 @@ class RoadSegment {
     this.group.position.copy(pos).add(mid);
   }
 
-  // Has player entered this segment?
   checkPassed(p) {
     switch (this.direction) {
       case 0: return p.z < this.startPos.z;
@@ -147,9 +184,8 @@ class RoadSegment {
     }
   }
 
-  // Is player near the end (turn zone)?
   checkComplete(p) {
-    const m = 5; // generous turn zone
+    const m = 6; // generous turn zone
     switch (this.direction) {
       case 0: return p.z < this.endPos.z + m;
       case 1: return p.x > this.endPos.x - m;
@@ -158,19 +194,17 @@ class RoadSegment {
     }
   }
 
-  // Did player run past the turn?
   checkOvershot(p) {
     switch (this.direction) {
-      case 0: return p.z < this.endPos.z - 2;
-      case 1: return p.x > this.endPos.x + 2;
-      case 2: return p.z > this.endPos.z + 2;
-      case 3: return p.x < this.endPos.x + 2;
+      case 0: return p.z < this.endPos.z - 3;
+      case 1: return p.x > this.endPos.x + 3;
+      case 2: return p.z > this.endPos.z + 3;
+      case 3: return p.x < this.endPos.x + 3;
     }
   }
 
   dispose() {
     this.scene.remove(this.group);
-    // Don't dispose shared geo/materials
   }
 }
 
@@ -179,46 +213,79 @@ export class TrackManager {
   constructor(scene) {
     this.scene = scene;
     this.segments = [];
-    this.speed = 14; // faster base speed
+    this.speed = 14;
     this.maxSpeed = 28;
     this.distance = 0;
     this.nextSpawnPos = new THREE.Vector3(0, 0, 0);
     this.nextDirection = 0;
+
+    // Pre-plan the sequence so we know turns in advance
+    this.plannedTurns = []; // queue of turn types: 0=straight,1=left,2=right
   }
 
   init() {
     this.nextSpawnPos.set(0, 0, 0);
     this.nextDirection = 0;
+    this.plannedTurns = [];
 
-    // Opening sequence: 3 straight, then guaranteed turns to practice
-    this.spawnSegment(0); // straight
-    this.spawnSegment(0); // straight
-    this.spawnSegment(0); // straight
-    this.spawnSegment(2); // RIGHT turn
-    this.spawnSegment(0); // straight
-    this.spawnSegment(1); // LEFT turn
-    this.spawnSegment(0); // straight
-    this.spawnSegment(2); // RIGHT turn
-    this.spawnSegment(0); // straight
+    // Plan initial sequence: straight, straight, straight, right, straight, left, straight, right, straight
+    const initial = [0, 0, 0, 2, 0, 1, 0, 2, 0, 0, 1, 0, 2, 0, 1];
+    this.plannedTurns.push(...initial);
+
+    // Spawn initial segments
+    for (let i = 0; i < 8; i++) {
+      this.spawnNextPlanned();
+    }
   }
 
-  spawnSegment(turnType) {
-    let dir = this.nextDirection;
-    if (turnType === 1) dir = (dir - 1 + 4) % 4;
-    else if (turnType === 2) dir = (dir + 1) % 4;
+  // Figure out what turn type results in what direction
+  getTurnLabel(prevDir, nextDir) {
+    if (nextDir === prevDir) return 'straight';
+    if (nextDir === (prevDir + 1) % 4) return 'right';
+    if (nextDir === (prevDir - 1 + 4) % 4) return 'left';
+    return 'straight';
+  }
 
-    const seg = new RoadSegment(dir, this.nextSpawnPos.clone(), this.scene);
+  spawnNextPlanned() {
+    // Get next turn type from queue, or generate random
+    let turnType;
+    if (this.plannedTurns.length > 0) {
+      turnType = this.plannedTurns.shift();
+    } else {
+      const r = Math.random();
+      turnType = r < 0.3 ? 0 : r < 0.65 ? 1 : 2;
+    }
+
+    let nextDir = this.nextDirection;
+    if (turnType === 1) nextDir = (nextDir - 1 + 4) % 4;
+    else if (turnType === 2) nextDir = (nextDir + 1) % 4;
+
+    // Peek at what comes AFTER this segment to know if THIS segment needs a wall opening
+    let peekTurnType;
+    if (this.plannedTurns.length > 0) {
+      peekTurnType = this.plannedTurns[0];
+    } else {
+      // Generate and store for consistency
+      const r = Math.random();
+      peekTurnType = r < 0.3 ? 0 : r < 0.65 ? 1 : 2;
+      this.plannedTurns.push(peekTurnType);
+    }
+
+    // What direction will the segment AFTER this one go?
+    let peekDir = nextDir;
+    if (peekTurnType === 1) peekDir = (peekDir - 1 + 4) % 4;
+    else if (peekTurnType === 2) peekDir = (peekDir + 1) % 4;
+
+    const nextTurnLabel = this.getTurnLabel(nextDir, peekDir);
+
+    const turnInfo = { nextTurn: nextTurnLabel };
+
+    const seg = new RoadSegment(nextDir, this.nextSpawnPos.clone(), this.scene, turnInfo);
     this.segments.push(seg);
 
-    this.nextSpawnPos.add(DIR_VECTORS[dir].clone().multiplyScalar(ROAD_LENGTH));
-    this.nextDirection = dir;
+    this.nextSpawnPos.add(DIR_VECTORS[nextDir].clone().multiplyScalar(ROAD_LENGTH));
+    this.nextDirection = nextDir;
     return seg;
-  }
-
-  spawnRandomSegment() {
-    const r = Math.random();
-    // 30% straight, 35% left, 35% right — more turns = more fun
-    return this.spawnSegment(r < 0.3 ? 0 : r < 0.65 ? 1 : 2);
   }
 
   update(delta, playerPos) {
@@ -232,11 +299,11 @@ export class TrackManager {
 
       if (seg.passed && !seg.nextRoadSpawned) {
         seg.nextRoadSpawned = true;
-        while (this.segments.length - i < 6) this.spawnRandomSegment();
+        while (this.segments.length - i < 6) this.spawnNextPlanned();
       }
     }
 
-    // Cleanup old segments
+    // Cleanup old
     while (this.segments.length > 10) {
       const old = this.segments[0];
       if (old.passed && old.complete) {
@@ -269,5 +336,6 @@ export class TrackManager {
     this.distance = 0;
     this.nextSpawnPos.set(0, 0, 0);
     this.nextDirection = 0;
+    this.plannedTurns = [];
   }
 }

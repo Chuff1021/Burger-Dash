@@ -165,10 +165,19 @@ class Game {
     const curDir = currentSeg.direction;
     if (nextDir === curDir) return; // Next is straight, no turn needed
 
-    // Is player in the turn zone?
-    if (!currentSeg.complete) return; // Not close enough to turn yet
+    // Allow turning in the second half of the segment (very generous)
+    // Don't require complete — just check if player is past the midpoint
+    const mid = currentSeg.startPos.clone().add(currentSeg.endPos).multiplyScalar(0.5);
+    let pastMid = false;
+    switch (curDir) {
+      case 0: pastMid = playerPos.z < mid.z; break;
+      case 1: pastMid = playerPos.x > mid.x; break;
+      case 2: pastMid = playerPos.z > mid.z; break;
+      case 3: pastMid = playerPos.x < mid.x; break;
+    }
+    if (!pastMid) return; // Too early, haven't reached turn zone
 
-    // Check if the turn direction matches
+    // Execute the turn regardless of left/right — just go to the next segment's direction
     const leftDir = (curDir - 1 + 4) % 4;
     const rightDir = (curDir + 1) % 4;
 
@@ -180,20 +189,20 @@ class Game {
       this.player.turnRight();
       this.snapPlayer(currentSeg);
       AudioManager.play('laneSwitch');
+    } else if (nextDir === leftDir || nextDir === rightDir) {
+      // Player pressed wrong direction but there IS a turn — be forgiving, turn anyway
+      if (nextDir === leftDir) this.player.turnLeft();
+      else this.player.turnRight();
+      this.snapPlayer(currentSeg);
+      AudioManager.play('laneSwitch');
     }
-    // Wrong direction = ignore (they'll crash into wall)
   }
 
   snapPlayer(seg) {
     const pos = this.player.getPosition();
-    // Snap to the turn point so player aligns with new corridor
-    if (seg.direction === 0 || seg.direction === 2) {
-      pos.x = seg.endPos.x;
-      pos.z = seg.endPos.z;
-    } else {
-      pos.x = seg.endPos.x;
-      pos.z = seg.endPos.z;
-    }
+    // Snap to the turn intersection point
+    pos.x = seg.endPos.x;
+    pos.z = seg.endPos.z;
   }
 
   wireUI() {
