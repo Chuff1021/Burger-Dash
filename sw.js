@@ -1,4 +1,4 @@
-const CACHE_NAME = 'burger-dash-v1';
+const CACHE_NAME = 'burger-dash-v2';
 const LOCAL_ASSETS = [
   './',
   './index.html',
