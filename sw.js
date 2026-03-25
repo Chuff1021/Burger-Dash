@@ -1,4 +1,4 @@
-const CACHE_NAME = 'burger-dash-v2';
+const CACHE_NAME = 'burger-dash-v3';
 const LOCAL_ASSETS = [
   './',
   './index.html',
@@ -15,7 +15,13 @@ const LOCAL_ASSETS = [
   './js/save.js',
   './manifest.json',
   './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png'
+  './assets/icons/icon-512.png',
+  './assets/models/player1.glb',
+  './assets/models/coin.glb',
+  './assets/models/hurdle.glb',
+  './assets/models/train.glb',
+  './assets/models/cement_roadblock.glb',
+  './assets/models/roadblock.glb'
 ];
 
 self.addEventListener('install', (event) => {

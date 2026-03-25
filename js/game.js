@@ -355,7 +355,7 @@ class Game {
     AudioManager.resumeContext();
   }
 
-  startGame(charId) {
+  async startGame(charId) {
     this.cleanup();
 
     this.score = 0;
@@ -376,7 +376,7 @@ class Game {
     this.collectibles.reset();
     this.effects.deactivateAura();
 
-    this.player.init(charId, this.scene);
+    await this.player.init(charId, this.scene);
     this.selectedCharacter = charId;
 
     this.state = GameState.PLAYING;

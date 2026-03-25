@@ -1,5 +1,6 @@
 // collectibles.js — Coins, power-ups, combo system
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { LANES } from './world.js';
 
 function toonMat(color) {
