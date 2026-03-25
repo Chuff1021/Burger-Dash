@@ -1,5 +1,10 @@
 // game.js — Main game loop, state machine, orchestrator
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { SaveManager } from './save.js';
 import { AudioManager } from './audio.js';
 import { CHARACTERS, buildModel } from './characters.js';
@@ -79,7 +84,7 @@ class Game {
     SaveManager.load();
     this.selectedCharacter = SaveManager.getSelectedCharacter();
 
-    // Three.js setup
+    // Three.js setup — enhanced renderer with shadows and tone mapping
     const canvas = document.getElementById('game-canvas');
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -89,17 +94,78 @@ class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
 
+    // Camera — closer, lower, more cinematic (Subway Surfers style)
     this.camera = new THREE.PerspectiveCamera(
-      60,
+      55,
       window.innerWidth / window.innerHeight,
       0.1,
-      100
+      150
     );
+    this.cameraBasePos.set(0, 3.5, 6);
+    this.cameraLookTarget.set(0, 1.2, -8);
     this.camera.position.copy(this.cameraBasePos);
     this.camera.lookAt(this.cameraLookTarget);
+
+    // --- Post-processing pipeline ---
+    this.composer = new EffectComposer(this.renderer);
+
+    // Base render pass
+    const renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(renderPass);
+
+    // Bloom for neon signs, coins, power-ups
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.4,   // strength
+      0.5,   // radius
+      0.7    // threshold
+    );
+    this.composer.addPass(bloomPass);
+    this.bloomPass = bloomPass;
+
+    // FXAA anti-aliasing
+    const fxaaPass = new ShaderPass(FXAAShader);
+    fxaaPass.uniforms['resolution'].value.set(
+      1 / (window.innerWidth * Math.min(window.devicePixelRatio, 2)),
+      1 / (window.innerHeight * Math.min(window.devicePixelRatio, 2))
+    );
+    this.composer.addPass(fxaaPass);
+    this.fxaaPass = fxaaPass;
+
+    // Vignette + color grading shader
+    const vignetteShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        darkness: { value: 0.5 },
+        offset: { value: 1.2 },
+        tint: { value: new THREE.Color(1.05, 0.95, 0.9) } // warm tint
+      },
+      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float darkness;
+        uniform float offset;
+        uniform vec3 tint;
+        varying vec2 vUv;
+        void main() {
+          vec4 texel = texture2D(tDiffuse, vUv);
+          vec2 uv = (vUv - vec2(0.5)) * vec2(offset);
+          float vignette = clamp(1.0 - dot(uv, uv), 0.0, 1.0);
+          texel.rgb *= mix(vec3(1.0 - darkness), vec3(1.0), vignette);
+          texel.rgb *= tint;
+          gl_FragColor = texel;
+        }
+      `
+    };
+    const vignettePass = new ShaderPass(vignetteShader);
+    this.composer.addPass(vignettePass);
 
     // Environment (lights, fog, background)
     this.envLights = createEnvironmentScene(this.scene);
@@ -352,7 +418,7 @@ class Game {
         break;
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 
   updatePlaying(delta, time) {
@@ -480,14 +546,18 @@ class Game {
     // Speed lines
     this.effects.setSpeedLines(speed, 35);
 
-    // Camera follow
-    const targetCamX = this.player.getPosition().x * 0.3;
-    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, delta * 5);
-    this.camera.position.y = THREE.MathUtils.lerp(
-      this.camera.position.y,
-      this.jetpackActive ? 10 : this.cameraBasePos.y,
-      delta * 3
-    );
+    // Camera follow — smooth, cinematic, tracks player lane
+    const playerPos = this.player.getPosition();
+    const targetCamX = playerPos.x * 0.4;
+    const targetCamY = this.jetpackActive ? 8 : this.cameraBasePos.y;
+    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, delta * 6);
+    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetCamY, delta * 4);
+
+    // Look target tracks player slightly
+    const lookTarget = this.cameraLookTarget.clone();
+    lookTarget.x = playerPos.x * 0.3;
+    lookTarget.y = playerPos.y + 1.2;
+    this.camera.lookAt(lookTarget);
 
     // Move warm light with player
     if (this.envLights && this.envLights.warmLight) {
@@ -659,9 +729,17 @@ class Game {
   onResize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
+    const pr = Math.min(window.devicePixelRatio, 2);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.composer.setSize(w, h);
+    if (this.fxaaPass) {
+      this.fxaaPass.uniforms['resolution'].value.set(1 / (w * pr), 1 / (h * pr));
+    }
+    if (this.bloomPass) {
+      this.bloomPass.resolution.set(w, h);
+    }
   }
 }
 
