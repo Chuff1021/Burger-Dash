@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Burger Dash</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E24B4A">
+
+  <!-- iPhone -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Burger Dash">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+
+  <!-- Prevent text selection and callouts on iOS -->
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- Three.js via importmap -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Howler.js -->
+  <script src="https://cdn.jsdelivr.net/npm/howler@2.2.4/dist/howler.min.js"></script>
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Three.js Canvas -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Title Screen -->
+  <div id="screen-title" class="screen active">
+    <div class="title-logo">
+      <h1 class="title-text">BURGER<br>DASH</h1>
+      <div class="title-drip"></div>
+    </div>
+    <div class="title-highscore">BEST: <span id="title-highscore">0</span></div>
+    <button class="btn btn-primary" id="btn-play">TAP TO START</button>
+    <button class="btn btn-small" id="btn-settings-open">&#9881; SETTINGS</button>
+  </div>
+
+  <!-- Character Select Screen -->
+  <div id="screen-charselect" class="screen">
+    <h2 class="screen-heading">SELECT YOUR COOK</h2>
+    <div id="char-preview-container">
+      <canvas id="char-preview-canvas"></canvas>
+    </div>
+    <div id="char-info">
+      <div id="char-name" class="char-name"></div>
+      <div id="char-title" class="char-title"></div>
+      <div id="char-stats">
+        <div class="stat-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-fill" id="stat-speed"></div></div></div>
+        <div class="stat-row"><span class="stat-label">JMP</span><div class="stat-bar"><div class="stat-fill" id="stat-jump"></div></div></div>
+        <div class="stat-row"><span class="stat-label">MAG</span><div class="stat-bar"><div class="stat-fill" id="stat-magnet"></div></div></div>
+      </div>
+      <div id="char-ability" class="char-ability"></div>
+    </div>
+    <div id="char-nav">
+      <button class="btn btn-arrow" id="char-prev">&#9664;</button>
+      <button class="btn btn-primary" id="char-select-btn">SELECT</button>
+      <button class="btn btn-arrow" id="char-next">&#9654;</button>
+    </div>
+    <div id="char-unlock-info"></div>
+    <button class="btn btn-small" id="char-back">BACK</button>
+  </div>
+
+  <!-- HUD (during gameplay) -->
+  <div id="hud" class="screen">
+    <div id="hud-top-left">
+      <div id="hud-score">0</div>
+      <div id="hud-lives"></div>
+    </div>
+    <div id="hud-top-center">
+      <div id="hud-combo" class="hidden"></div>
+    </div>
+    <div id="hud-top-right">
+      <div id="hud-distance">0m</div>
+    </div>
+    <div id="hud-bottom-left">
+      <div id="hud-ability-bar">
+        <div id="hud-ability-fill"></div>
+      </div>
+    </div>
+    <div id="hud-bottom-center">
+      <div id="hud-powerup" class="hidden">
+        <div id="hud-powerup-icon"></div>
+        <svg id="hud-powerup-ring" viewBox="0 0 40 40">
+          <circle cx="20" cy="20" r="18" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="3"/>
+          <circle id="hud-powerup-arc" cx="20" cy="20" r="18" fill="none" stroke="#FFD700" stroke-width="3" stroke-dasharray="113" stroke-dashoffset="0" transform="rotate(-90 20 20)"/>
+        </svg>
+      </div>
+    </div>
+    <div id="hud-bottom-right">
+      <div id="hud-coins"><span class="coin-icon">&#9679;</span> <span id="hud-coin-count">0</span></div>
+    </div>
+    <button id="hud-pause" class="btn-icon">&#10074;&#10074;</button>
+  </div>
+
+  <!-- Pause Screen -->
+  <div id="screen-pause" class="screen">
+    <h2 class="screen-heading">PAUSED</h2>
+    <button class="btn btn-primary" id="btn-resume">RESUME</button>
+    <button class="btn" id="btn-restart">RESTART</button>
+    <button class="btn" id="btn-pause-chars">SWITCH CHARACTER</button>
+    <button class="btn" id="btn-pause-menu">MAIN MENU</button>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="screen-gameover" class="screen">
+    <h2 class="screen-heading gameover-title">GAME OVER</h2>
+    <div id="go-character-quip" class="go-quip"></div>
+    <div id="go-stats">
+      <div class="go-stat"><span class="go-stat-label">SCORE</span><span class="go-stat-value" id="go-score">0</span></div>
+      <div class="go-stat"><span class="go-stat-label">BEST</span><span class="go-stat-value" id="go-best">0</span></div>
+      <div class="go-stat"><span class="go-stat-label">DISTANCE</span><span class="go-stat-value" id="go-distance">0m</span></div>
+      <div class="go-stat"><span class="go-stat-label">COINS</span><span class="go-stat-value" id="go-coins">0</span></div>
+    </div>
+    <div id="go-newbest" class="hidden">&#9733; NEW BEST! &#9733;</div>
+    <button class="btn btn-primary" id="btn-retry">PLAY AGAIN</button>
+    <button class="btn" id="btn-go-chars">SWITCH CHARACTER</button>
+    <button class="btn" id="btn-go-menu">MAIN MENU</button>
+  </div>
+
+  <!-- Settings Screen -->
+  <div id="screen-settings" class="screen">
+    <h2 class="screen-heading">SETTINGS</h2>
+    <div class="setting-row">
+      <span class="setting-label">MUSIC</span>
+      <input type="range" id="setting-music" min="0" max="100" value="70" class="setting-slider">
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">SFX</span>
+      <input type="range" id="setting-sfx" min="0" max="100" value="100" class="setting-slider">
+    </div>
+    <button class="btn btn-primary" id="btn-settings-back">BACK</button>
+  </div>
+
+  <!-- Combo popup container -->
+  <div id="combo-container"></div>
+
+  <!-- Checkpoint banner -->
+  <div id="checkpoint-banner" class="hidden">
+    <span id="checkpoint-text">CHECKPOINT!</span>
+  </div>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+
+  <!-- Game Entry -->
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>
