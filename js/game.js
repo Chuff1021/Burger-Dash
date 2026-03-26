@@ -146,8 +146,8 @@ class Game {
 
       if (ax > ay) {
         // Horizontal = TURN
-        if (dx > 0) this.handleTurn('right');
-        else this.handleTurn('left');
+        if (dx > 0) this.handleHorizontal('right');
+        else this.handleHorizontal('left');
       } else {
         // Vertical = jump/slide
         if (dy < 0) { this.player.jump(); AudioManager.play('jump'); }
@@ -159,8 +159,8 @@ class Game {
     window.addEventListener('keydown', e => {
       if (this.state !== State.PLAYING) return;
       switch (e.key) {
-        case 'ArrowLeft': case 'a': this.handleTurn('left'); break;
-        case 'ArrowRight': case 'd': this.handleTurn('right'); break;
+        case 'ArrowLeft': case 'a': this.handleHorizontal('left'); break;
+        case 'ArrowRight': case 'd': this.handleHorizontal('right'); break;
         case 'ArrowUp': case 'w': case ' ': this.player.jump(); AudioManager.play('jump'); break;
         case 'ArrowDown': case 's': this.player.slide(); AudioManager.play('slide'); break;
         case 'Escape': this.pause(); break;
@@ -168,53 +168,34 @@ class Game {
     });
   }
 
-  handleTurn(dir) {
+  handleHorizontal(dir) {
     const playerPos = this.player.getPosition();
     const currentSeg = this.track.getCurrentSegment(playerPos);
     if (!currentSeg) return;
 
     const nextSeg = this.track.getNextSegment(currentSeg);
-    if (!nextSeg) return;
-
-    // Is the next segment a turn?
-    const nextDir = nextSeg.direction;
+    const nextDir = nextSeg?.direction;
     const curDir = currentSeg.direction;
-    if (nextDir === curDir) return; // Next is straight, no turn needed
+    const turnZoneStart = 0.68;
+    const segLength = currentSeg.startPos.distanceTo(currentSeg.endPos);
+    const progress = Math.min(1, currentSeg.startPos.distanceTo(playerPos) / Math.max(segLength, 0.001));
+    const inTurnZone = progress >= turnZoneStart && nextSeg && nextDir !== curDir;
 
-    // Allow turning in the second half of the segment (very generous)
-    // Don't require complete — just check if player is past the midpoint
-    const mid = currentSeg.startPos.clone().add(currentSeg.endPos).multiplyScalar(0.5);
-    let pastMid = false;
-    switch (curDir) {
-      case 0: pastMid = playerPos.z < mid.z; break;
-      case 1: pastMid = playerPos.x > mid.x; break;
-      case 2: pastMid = playerPos.z > mid.z; break;
-      case 3: pastMid = playerPos.x < mid.x; break;
+    if (inTurnZone) {
+      const leftDir = (curDir - 1 + 4) % 4;
+      const rightDir = (curDir + 1) % 4;
+      if ((dir === 'left' && nextDir === leftDir) || (dir === 'right' && nextDir === rightDir) || nextDir === leftDir || nextDir === rightDir) {
+        this.beginCameraTurn(curDir, nextDir);
+        if (nextDir === leftDir) this.player.turnLeft();
+        else this.player.turnRight();
+        this.snapPlayer(currentSeg);
+        AudioManager.play('laneSwitch');
+        return;
+      }
     }
-    if (!pastMid) return; // Too early, haven't reached turn zone
 
-    // Execute the turn regardless of left/right — just go to the next segment's direction
-    const leftDir = (curDir - 1 + 4) % 4;
-    const rightDir = (curDir + 1) % 4;
-
-    if (dir === 'left' && nextDir === leftDir) {
-      this.beginCameraTurn(curDir, nextDir);
-      this.player.turnLeft();
-      this.snapPlayer(currentSeg);
-      AudioManager.play('laneSwitch');
-    } else if (dir === 'right' && nextDir === rightDir) {
-      this.beginCameraTurn(curDir, nextDir);
-      this.player.turnRight();
-      this.snapPlayer(currentSeg);
-      AudioManager.play('laneSwitch');
-    } else if (nextDir === leftDir || nextDir === rightDir) {
-      // Player pressed wrong direction but there IS a turn — be forgiving, turn anyway
-      this.beginCameraTurn(curDir, nextDir);
-      if (nextDir === leftDir) this.player.turnLeft();
-      else this.player.turnRight();
-      this.snapPlayer(currentSeg);
-      AudioManager.play('laneSwitch');
-    }
+    const laneMoved = this.player.moveLane(dir === 'left' ? -1 : 1);
+    if (laneMoved) AudioManager.play('laneSwitch');
   }
 
   snapPlayer(seg) {

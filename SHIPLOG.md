@@ -15,4 +15,5 @@
 - Added first environment/theme pass to the corridor system: burger-joint palette shift, neon signage, menu boards, fryer/tray props, and warmer arcade lighting accents.
 - Added a gameplay fairness pass to reduce clutter near turns and improve obstacle/coin readability at higher speeds.
 - Added a turn readability pass: framed turn openings, side guidance arrows/lights, and floor guide strips so corners read more intentionally.
+- Shipped a core bug-fix pass: opened turn entrances on both corridor sides where needed, lengthened hallways, restored left/right lane movement, and tightened jump obstacle fairness.
 - Push/deploy workflow is approved and expected after meaningful safe batches.

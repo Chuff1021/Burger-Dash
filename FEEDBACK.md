@@ -13,3 +13,7 @@ Use this file to capture human feedback verbatim enough to preserve intent, then
 - New feedback: current turning flow feels too constrained because the player can only really go straight until the turn.
 - New feedback: walls/openings at turns look bad and visually illogical.
 - New feedback: coins and obstacles look low quality and need a visual quality pass.
+- New feedback: a wall is still blocking where the turn should be.
+- New feedback: hallways are not long enough.
+- New feedback: jumping over obstacles can still incorrectly cause damage.
+- New feedback: player is stuck running straight and cannot move left/right to dodge obstacles or collect coins.

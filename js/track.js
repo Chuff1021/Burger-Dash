@@ -1,7 +1,7 @@
 // track.js — Temple Run turning corridor system with turn openings
 import * as THREE from 'three';
 
-export const ROAD_LENGTH = 20;
+export const ROAD_LENGTH = 28;
 export const ROAD_WIDTH = 4;
 const WALL_HEIGHT = 3;
 const OPENING_SIZE = 5; // gap in wall at turn points
@@ -226,23 +226,30 @@ function addTurnFrame(group, side, openEnd) {
   group.add(guideLight);
 }
 
-function buildWall(side, openEnd) {
+function buildWall(side, openStart = false, openEnd = false) {
   const group = new THREE.Group();
   const x = side * (ROAD_WIDTH / 2 + WALL_THICKNESS / 2);
 
-  if (!openEnd) {
+  if (!openStart && !openEnd) {
     group.add(createWallPiece(x, 0, ROAD_LENGTH));
-  } else {
-    const solidLength = ROAD_LENGTH - OPENING_SIZE;
-    const pieceLength = solidLength;
+    return group;
+  }
 
-    if (openEnd === 'end') {
-      group.add(createWallPiece(x, OPENING_SIZE / 2, pieceLength));
-    } else {
-      group.add(createWallPiece(x, -OPENING_SIZE / 2, pieceLength));
-    }
+  if (openStart && openEnd) {
+    const centerLength = ROAD_LENGTH - OPENING_SIZE * 2;
+    if (centerLength > 0.25) group.add(createWallPiece(x, 0, centerLength));
+    addTurnFrame(group, side, 'start');
+    addTurnFrame(group, side, 'end');
+    return group;
+  }
 
-    addTurnFrame(group, side, openEnd);
+  const solidLength = ROAD_LENGTH - OPENING_SIZE;
+  if (openEnd) {
+    group.add(createWallPiece(x, OPENING_SIZE / 2, solidLength));
+    addTurnFrame(group, side, 'end');
+  } else if (openStart) {
+    group.add(createWallPiece(x, -OPENING_SIZE / 2, solidLength));
+    addTurnFrame(group, side, 'start');
   }
 
   return group;
@@ -275,19 +282,27 @@ class RoadSegment {
     // For a RIGHT turn at the end: open the RIGHT wall at the end
     // For a LEFT turn at the end: open the LEFT wall at the end
 
-    let leftOpen = null;
-    let rightOpen = null;
+    let leftOpenStart = false;
+    let rightOpenStart = false;
+    let leftOpenEnd = false;
+    let rightOpenEnd = false;
 
-    if (turnInfo && turnInfo.nextTurn === 'right') {
-      rightOpen = 'end';  // Open right wall at end for right turn
-    } else if (turnInfo && turnInfo.nextTurn === 'left') {
-      leftOpen = 'end';   // Open left wall at end for left turn
+    if (turnInfo?.prevTurn === 'right') {
+      rightOpenStart = true;
+    } else if (turnInfo?.prevTurn === 'left') {
+      leftOpenStart = true;
     }
 
-    const leftWallGroup = buildWall(-1, leftOpen);
+    if (turnInfo?.nextTurn === 'right') {
+      rightOpenEnd = true;
+    } else if (turnInfo?.nextTurn === 'left') {
+      leftOpenEnd = true;
+    }
+
+    const leftWallGroup = buildWall(-1, leftOpenStart, leftOpenEnd);
     this.group.add(leftWallGroup);
 
-    const rightWallGroup = buildWall(1, rightOpen);
+    const rightWallGroup = buildWall(1, rightOpenStart, rightOpenEnd);
     this.group.add(rightWallGroup);
 
     // One ceiling beam
@@ -424,8 +439,11 @@ export class TrackManager {
     else if (peekTurnType === 2) peekDir = (peekDir + 1) % 4;
 
     const nextTurnLabel = this.getTurnLabel(nextDir, peekDir);
+    const prevTurnLabel = this.segments.length > 0
+      ? this.getTurnLabel(this.segments[this.segments.length - 1].direction, nextDir)
+      : 'straight';
 
-    const turnInfo = { nextTurn: nextTurnLabel };
+    const turnInfo = { prevTurn: prevTurnLabel, nextTurn: nextTurnLabel };
 
     const seg = new RoadSegment(nextDir, this.nextSpawnPos.clone(), this.scene, turnInfo);
     this.segments.push(seg);

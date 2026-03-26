@@ -7,8 +7,9 @@ const GRAVITY = -25;
 const JUMP_FORCE = 10;
 const SLIDE_DURATION = 700;
 const INVINCIBILITY_DURATION = 2000;
-const STRAFE_SPEED = 6;
-const STRAFE_LIMIT = ROAD_WIDTH / 2 - 0.4;
+const STRAFE_SPEED = 10;
+const STRAFE_LIMIT = ROAD_WIDTH / 2 - 0.7;
+const LANE_OFFSET = 0.95;
 
 export class Player {
   constructor() {
@@ -37,6 +38,10 @@ export class Player {
     this.visualTurn = 0;
     this.turnLean = 0;
     this.turnMomentum = 0;
+
+    // Corridor lane movement
+    this.lane = 0;
+    this.lateralOffset = 0;
   }
 
   async init(scene) {
@@ -166,6 +171,8 @@ export class Player {
     this.visualTurn = this.direction;
     this.turnLean = 0;
     this.turnMomentum = 0;
+    this.lane = 0;
+    this.lateralOffset = 0;
 
     if (this.model) {
       this.model.position.set(0, 0, -2);
@@ -191,8 +198,18 @@ export class Player {
     // Auto-run forward in current direction
     const moveAmount = speed * delta;
     const dirVec = DIR_VECTORS[this.direction];
+    const perpDir = DIR_VECTORS[(this.direction + 1) % 4];
+
+    this.model.position.x -= perpDir.x * this.lateralOffset;
+    this.model.position.z -= perpDir.z * this.lateralOffset;
     this.model.position.x += dirVec.x * moveAmount;
     this.model.position.z += dirVec.z * moveAmount;
+
+    const targetOffset = this.lane * LANE_OFFSET;
+    this.lateralOffset = THREE.MathUtils.lerp(this.lateralOffset, targetOffset, Math.min(delta * STRAFE_SPEED, 1));
+    this.lateralOffset = THREE.MathUtils.clamp(this.lateralOffset, -STRAFE_LIMIT, STRAFE_LIMIT);
+    this.model.position.x += perpDir.x * this.lateralOffset;
+    this.model.position.z += perpDir.z * this.lateralOffset;
 
     // Jump physics
     if (!this.grounded) {
@@ -264,13 +281,12 @@ export class Player {
     this.direction = (this.direction + 1) % 4;
   }
 
-  // Strafe within the corridor (tilt-like movement)
-  strafe(amount, delta) {
-    if (this.state === 'dead') return;
-    // Move perpendicular to current direction
-    const perpDir = DIR_VECTORS[(this.direction + 1) % 4];
-    this.model.position.x += perpDir.x * amount * STRAFE_SPEED * delta;
-    this.model.position.z += perpDir.z * amount * STRAFE_SPEED * delta;
+  moveLane(dir) {
+    if (this.state === 'dead') return false;
+    const nextLane = THREE.MathUtils.clamp(this.lane + dir, -1, 1);
+    if (nextLane === this.lane) return false;
+    this.lane = nextLane;
+    return true;
   }
 
   jump() {
@@ -316,6 +332,7 @@ export class Player {
   getPosition() { return this.model ? this.model.position : new THREE.Vector3(); }
   getDirection() { return this.direction; }
   getState() { return this.state; }
+  getLane() { return this.lane; }
   getCollisionBox() { return this.collisionBox; }
   get isGrounded() { return this.grounded; }
   isInvincible() { return this.invincibleTimer > 0 || this.state === 'hit'; }

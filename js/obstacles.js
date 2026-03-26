@@ -107,7 +107,11 @@ export class ObstacleManager {
 
     const kind = Math.random() < (speedT > 0.45 ? 0.48 : 0.62) ? 'jump' : 'slide';
     const along = THREE.MathUtils.lerp(0.5, 0.68, 1 - speedT) * ROAD_LENGTH + THREE.MathUtils.randFloat(-0.6, 1.1);
-    const pos = segment.startPos.clone().add(DIR_VECTORS[segment.direction].clone().multiplyScalar(along));
+    const perp = DIR_VECTORS[(segment.direction + 1) % 4];
+    const laneOffset = [-0.95, 0, 0.95][Math.floor(Math.random() * 3)];
+    const pos = segment.startPos.clone()
+      .add(DIR_VECTORS[segment.direction].clone().multiplyScalar(along))
+      .add(perp.clone().multiplyScalar(laneOffset));
 
     const mesh = this.cloneTemplate(kind);
     const facing = segment.direction;
@@ -154,17 +158,19 @@ export class ObstacleManager {
       const bob = Math.sin(performance.now() * 0.003 + obstacle.bobPhase) * 0.02;
       mesh.position.y = bob;
 
-      const boxHeight = kind === 'jump' ? 1.1 : 0.9;
-      const boxY = kind === 'jump' ? 0.55 : 1.22;
+      const laneWidth = 0.95;
+      const boxHeight = kind === 'jump' ? 0.78 : 0.72;
+      const boxY = kind === 'jump' ? 0.38 : 1.22;
       this.tempBox.setFromCenterAndSize(
         this.tempVec.set(mesh.position.x, boxY, mesh.position.z),
-        new THREE.Vector3(ROAD_WIDTH - 0.9, boxHeight, 0.8)
+        new THREE.Vector3(laneWidth, boxHeight, 0.8)
       );
 
-      const safeJump = kind === 'jump' && player.getState() === 'jumping' && playerPos.y > HURDLE_CLEAR_HEIGHT;
-      const safeSlide = kind === 'slide' && player.getState() === 'sliding' && playerPos.y < LOW_BEAM_CLEAR_HEIGHT;
+      const safeJump = kind === 'jump' && player.getState() === 'jumping' && playerPos.y > 0.9;
+      const safeSlide = kind === 'slide' && player.getState() === 'sliding';
+      const sameLane = Math.abs(playerPos.x - mesh.position.x) < 0.72 && Math.abs(playerPos.z - mesh.position.z) < 1.0;
 
-      if (!obstacle.hit && !player.isInvincible() && this.tempBox.intersectsBox(playerBox)) {
+      if (!obstacle.hit && !player.isInvincible() && sameLane && this.tempBox.intersectsBox(playerBox)) {
         if (!safeJump && !safeSlide) {
           obstacle.hit = true;
           hits++;
