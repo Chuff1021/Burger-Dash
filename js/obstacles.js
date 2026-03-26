@@ -96,16 +96,17 @@ export class ObstacleManager {
     return template.clone(true);
   }
 
-  maybePopulateSegment(segment, difficulty) {
+  maybePopulateSegment(segment, difficulty, speed = 14) {
     if (!segment || segment.userData?.obstaclesPopulated) return;
     segment.userData ||= {};
     segment.userData.obstaclesPopulated = true;
 
-    const chance = THREE.MathUtils.clamp(0.24 + difficulty * 0.42, 0.24, 0.72);
+    const speedT = THREE.MathUtils.clamp((speed - 14) / 14, 0, 1);
+    const chance = THREE.MathUtils.clamp(0.2 + difficulty * 0.34 + speedT * 0.08, 0.2, 0.62);
     if (Math.random() > chance) return;
 
-    const kind = Math.random() < 0.55 ? 'jump' : 'slide';
-    const along = THREE.MathUtils.randFloat(0.52, 0.74) * ROAD_LENGTH;
+    const kind = Math.random() < (speedT > 0.45 ? 0.48 : 0.62) ? 'jump' : 'slide';
+    const along = THREE.MathUtils.lerp(0.5, 0.68, 1 - speedT) * ROAD_LENGTH + THREE.MathUtils.randFloat(-0.6, 1.1);
     const pos = segment.startPos.clone().add(DIR_VECTORS[segment.direction].clone().multiplyScalar(along));
 
     const mesh = this.cloneTemplate(kind);
@@ -140,7 +141,7 @@ export class ObstacleManager {
     for (const segment of track.segments) {
       const next = track.getNextSegment(segment);
       const isTurnApproach = next && next.direction !== segment.direction;
-      if (!isTurnApproach) this.maybePopulateSegment(segment, difficulty);
+      if (!isTurnApproach) this.maybePopulateSegment(segment, difficulty, track.getSpeed());
     }
 
     let hits = 0;

@@ -13,4 +13,5 @@
 - Added a second gameplay-core batch with camera turn blending and a more controlled speed progression curve for fairer ramp-up.
 - Added first chaser pod prototype: a visible burger-joint villain pursuing behind the player with distance pressure tied to hits, checkpoints, and clean recovery.
 - Added first environment/theme pass to the corridor system: burger-joint palette shift, neon signage, menu boards, fryer/tray props, and warmer arcade lighting accents.
-- Local commit still blocked by missing git identity configuration on this machine.
+- Added a gameplay fairness pass to reduce clutter near turns and improve obstacle/coin readability at higher speeds.
+- Push is currently blocked by SSH config file permissions for this OpenClaw process (`/data/.ssh/config`).

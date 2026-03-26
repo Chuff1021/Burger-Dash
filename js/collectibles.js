@@ -74,11 +74,12 @@ export class CollectibleManager {
     return mesh;
   }
 
-  getPattern(kind, segment) {
+  getPattern(kind, segment, speed = 14) {
     const dir = DIR_VECTORS[segment.direction];
     const perp = DIR_VECTORS[(segment.direction + 1) % 4];
-    const forwardStart = THREE.MathUtils.randFloat(0.28, 0.48) * ROAD_LENGTH;
-    const spacing = 1.65;
+    const speedT = THREE.MathUtils.clamp((speed - 14) / 14, 0, 1);
+    const forwardStart = THREE.MathUtils.randFloat(0.24, 0.42) * ROAD_LENGTH;
+    const spacing = THREE.MathUtils.lerp(1.55, 2.05, speedT);
 
     const makePoint = (forwardOffset, sideOffset, y) => {
       return segment.startPos.clone()
@@ -115,14 +116,15 @@ export class CollectibleManager {
 
     const next = track.getNextSegment(segment);
     const isTurnApproach = next && next.direction !== segment.direction;
-    if (isTurnApproach && Math.random() < 0.55) return;
+    const speedT = THREE.MathUtils.clamp((track.getSpeed() - 14) / 14, 0, 1);
+    if (isTurnApproach && Math.random() < THREE.MathUtils.lerp(0.62, 0.8, speedT)) return;
 
-    const spawnChance = isTurnApproach ? 0.35 : 0.78;
+    const spawnChance = isTurnApproach ? THREE.MathUtils.lerp(0.32, 0.18, speedT) : THREE.MathUtils.lerp(0.78, 0.64, speedT);
     if (Math.random() > spawnChance) return;
 
     const roll = Math.random();
-    const pattern = roll < 0.22 ? 'arc' : roll < 0.48 ? 'double' : 'line';
-    const positions = this.getPattern(pattern, segment);
+    const pattern = roll < 0.18 ? 'arc' : roll < 0.42 ? 'double' : 'line';
+    const positions = this.getPattern(pattern, segment, track.getSpeed());
 
     for (const position of positions) {
       const mesh = this.createCoin();
