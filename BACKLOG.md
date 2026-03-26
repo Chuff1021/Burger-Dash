@@ -26,6 +26,8 @@
 - [ ] Turn readability / corridor opening visual fix
 - [x] Better pre-turn player freedom / feel
 - [ ] Fix blocked turn opening bug
+- [ ] Fix turn transition / commit logic at corners
+- [ ] Fix deterministic missed-turn death boundary
 - [x] Extend hallway length / visibility
 - [x] Fix jump collision fairness bug
 - [x] Restore left/right lane movement inside corridors

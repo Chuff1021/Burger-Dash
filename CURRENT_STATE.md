@@ -20,16 +20,16 @@ Burger Dash has a shippable runner foundation with multiple pushed batches acros
 - Project memory files are present locally but currently untracked in git.
 
 ## Highest-Value Current Focus
-1. Visually debug the live map/corner geometry instead of guessing from code alone.
-2. Fix any remaining wall pieces protruding into the turn path.
-3. Improve coin and obstacle visual quality after map trust is restored.
+1. Fix the segment/turn transition logic so the player actually commits into the next corridor.
+2. Make the missed-turn fail boundary trigger reliably before the player can continue into empty space.
+3. Improve coin and obstacle visual quality after path trust is restored.
 4. Preserve the runner as the core experience while preparing the architecture for a later Build Mode.
 
 ## Current Risks
-- The user still sees a wall physically blocking the turn, which means the map is not yet visually trustworthy.
+- Geometry improved, but the user still cannot actually turn at the corner and can still run off the map.
+- The remaining bug now appears to be segment/turn transition logic or fail-boundary timing, not just visible wall geometry.
 - Earlier backlog state overstated the turn/opening fix as complete; that should now be treated as failed QA, not done work.
 - Autonomous jobs can still drift unless project memory files are kept current.
-- Blind environment iteration is lower value than rendered-scene inspection right now.
 
 ## Product Direction Update
 The user explicitly approved a Roblox-like workflow where the current maze/map can be edited and then immediately run with the character, while keeping higher-end custom visuals rather than looking like Roblox. This is now an official product direction, but it remains **phase two** after current map correctness and core readability are fixed.

@@ -15,7 +15,7 @@
     ]
   },
   "currentFocus": [
-    "visual map/corner debugging",
+    "turn transition / fail-boundary repair",
     "gameplay fairness and readability",
     "build-mode-ready architecture"
   ],
@@ -25,8 +25,8 @@
       "priority": "P0",
       "owner": "orchestrator",
       "status": "in_progress",
-      "title": "Visually inspect and fix live corner geometry",
-      "notes": "User still sees a wall protruding into the turn. Previous turn-fix claim failed QA. Use rendered-scene inspection before more blind geometry iteration."
+      "title": "Repair live turn transition and fail-boundary logic",
+      "notes": "Geometry improved, but the player still cannot actually turn and can still run off the map. Focus on current segment detection, next-segment lookup, turn commit, and deterministic fail timing."
     },
     {
       "id": "p0-fairness-pass",
