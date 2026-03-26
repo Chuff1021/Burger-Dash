@@ -11,6 +11,7 @@
 ## Immediate Safe Tasks
 - Capture visual evidence of the bad turn geometry from the running build.
 - Identify which wall/frame/floor-guide piece is intruding into the turn.
+- Treat the current turn-opening work as failed QA until the live build is visibly correct.
 - Keep fixes localized to geometry/path readability.
 - Avoid broad decorative churn until the turn bug is genuinely resolved.
 

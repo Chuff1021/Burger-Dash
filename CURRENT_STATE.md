@@ -27,6 +27,7 @@ Burger Dash has a shippable runner foundation with multiple pushed batches acros
 
 ## Current Risks
 - The user still sees a wall physically blocking the turn, which means the map is not yet visually trustworthy.
+- Earlier backlog state overstated the turn/opening fix as complete; that should now be treated as failed QA, not done work.
 - Autonomous jobs can still drift unless project memory files are kept current.
 - Blind environment iteration is lower value than rendered-scene inspection right now.
 

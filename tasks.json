@@ -26,7 +26,7 @@
       "owner": "orchestrator",
       "status": "in_progress",
       "title": "Visually inspect and fix live corner geometry",
-      "notes": "User still sees a wall protruding into the turn. Use rendered-scene inspection before more blind geometry iteration."
+      "notes": "User still sees a wall protruding into the turn. Previous turn-fix claim failed QA. Use rendered-scene inspection before more blind geometry iteration."
     },
     {
       "id": "p0-fairness-pass",

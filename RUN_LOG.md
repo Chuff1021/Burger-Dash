@@ -6,3 +6,9 @@
 - Reprioritized the project around visual map/corner debugging because user still reports a wall protruding into the turn.
 - Updated `CURRENT_STATE.md`, `NEXT_ACTIONS.md`, and `tasks.json` so all pods align on rendered-scene inspection first.
 - Captured the Roblox-like Build Mode idea as a later-phase product direction rather than an immediate diversion.
+
+## 2026-03-26 17:09 UTC — Orchestrator
+- Re-read project memory and git status.
+- Corrected project memory after failed QA/user feedback on the turn system.
+- Re-opened backlog items for turn readability and blocked turn opening bug.
+- Recorded that the previous turn-fix claim should not be treated as complete until visually verified in the live build.

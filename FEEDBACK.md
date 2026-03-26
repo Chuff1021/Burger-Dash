@@ -17,3 +17,4 @@ Use this file to capture human feedback verbatim enough to preserve intent, then
 - New feedback: hallways are not long enough.
 - New feedback: jumping over obstacles can still incorrectly cause damage.
 - New feedback: player is stuck running straight and cannot move left/right to dodge obstacles or collect coins.
+- New feedback: even after recent fixes, there is still a wall in front of the turn and the turn design still looks terrible.

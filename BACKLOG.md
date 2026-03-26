@@ -23,9 +23,9 @@
 - [x] Landing dust / obstacle hit particles
 - [x] Chaser/villain prototype behind player
 - [x] Chase pressure logic tied to mistakes and recovery
-- [x] Turn readability / corridor opening visual fix
+- [ ] Turn readability / corridor opening visual fix
 - [x] Better pre-turn player freedom / feel
-- [x] Fix blocked turn opening bug
+- [ ] Fix blocked turn opening bug
 - [x] Extend hallway length / visibility
 - [x] Fix jump collision fairness bug
 - [x] Restore left/right lane movement inside corridors
