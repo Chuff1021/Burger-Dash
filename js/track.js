@@ -4,7 +4,7 @@ import * as THREE from 'three';
 export const ROAD_LENGTH = 28;
 export const ROAD_WIDTH = 4;
 const WALL_HEIGHT = 3;
-const OPENING_SIZE = 5; // gap in wall at turn points
+const OPENING_SIZE = 8; // larger gap in wall at turn points
 const WALL_THICKNESS = 0.3;
 
 export const DIR_VECTORS = [
@@ -192,37 +192,17 @@ function createWallPiece(x, z, length) {
 
 function addTurnFrame(group, side, openEnd) {
   const sideSign = Math.sign(side) || 1;
-  const x = sideSign * (ROAD_WIDTH / 2 + WALL_THICKNESS * 0.5);
   const openingCenterZ = openEnd === 'end'
     ? -ROAD_LENGTH / 2 + OPENING_SIZE / 2
     : ROAD_LENGTH / 2 - OPENING_SIZE / 2;
-  const openingEdgeZ = openEnd === 'end'
-    ? -ROAD_LENGTH / 2 + OPENING_SIZE
-    : ROAD_LENGTH / 2 - OPENING_SIZE;
 
-  const jambMat = metalMat;
-  const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.24, WALL_HEIGHT, 0.24), jambMat);
-  jamb.position.set(x, WALL_HEIGHT / 2, openingEdgeZ);
-  group.add(jamb);
-
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, OPENING_SIZE + 0.2), jambMat);
-  top.position.set(x, WALL_HEIGHT - 0.18, openingCenterZ);
-  group.add(top);
-
-  const stripe = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, WALL_HEIGHT - 0.3, OPENING_SIZE - 0.2),
-    new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: 0xff7a00, emissiveIntensity: 0.5, roughness: 0.35 })
-  );
-  stripe.position.set(x - sideSign * 0.12, WALL_HEIGHT / 2, openingCenterZ);
-  group.add(stripe);
-
-  const arrow = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.5), neonMat);
-  arrow.position.set(sideSign * (ROAD_WIDTH / 2 - 0.32), 1.15, openingCenterZ);
+  const arrow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.65), neonMat);
+  arrow.position.set(sideSign * (ROAD_WIDTH / 2 - 0.5), 1.2, openingCenterZ);
   arrow.rotation.y = sideSign < 0 ? Math.PI / 2 : -Math.PI / 2;
   group.add(arrow);
 
-  const guideLight = new THREE.PointLight(0xff9f1c, 0.5, 5.5);
-  guideLight.position.set(sideSign * (ROAD_WIDTH / 2 - 0.4), 1.8, openingCenterZ);
+  const guideLight = new THREE.PointLight(0xff9f1c, 0.55, 6.5);
+  guideLight.position.set(sideSign * (ROAD_WIDTH / 2 - 0.55), 1.85, openingCenterZ);
   group.add(guideLight);
 }
 
@@ -320,6 +300,9 @@ class RoadSegment {
     // Burger-joint decor pass
     addTurnFloorGuides(this.group, turnInfo);
     addBurgerDecor(this.group, turnInfo);
+
+    // Hard fail blockers behind turn logic are better than hidden geometry in the path.
+    // Keep the turn opening itself as empty as possible.
 
     // Transform to world space
     this.applyTransform(direction, position);

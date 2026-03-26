@@ -333,19 +333,13 @@ class Game {
     if (seg) {
       const next = this.track.getNextSegment(seg);
       if (next && seg.checkOvershot(nextPlayerPos) && next.direction !== seg.direction) {
-        // Player missed the turn — take damage and auto-correct
+        // Player missed the turn — immediate fail, no flying into space.
         if (this.player.getDirection() === seg.direction) {
-          this.lives--;
+          this.lives = 0;
           this.player.hit();
           AudioManager.play('hit');
-
-          // Auto-turn to survive
-          const leftDir = (seg.direction - 1 + 4) % 4;
-          if (next.direction === leftDir) this.player.turnLeft();
-          else this.player.turnRight();
-          this.snapPlayer(seg);
-
-          if (this.lives <= 0) { this.onDeath(); return; }
+          this.onDeath();
+          return;
         }
       }
     }
