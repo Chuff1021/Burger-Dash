@@ -48,27 +48,34 @@
 - [ ] Warm themed lighting pass
 - [ ] Character abilities activation framework
 
-### P2 — Systems
+### P2 — Build Mode Foundation
+- [ ] Convert corridor/track logic into data-driven map pieces
+- [ ] Define saved map schema for straights, turns, obstacles, coins, checkpoints, and themes
+- [ ] Support hand-authored map playback using the same runner systems
+- [ ] Preserve endless mode by generating the same map-piece format procedurally
+- [ ] Design MVP Build Mode interaction flow for kid-friendly editing/testing
+
+### P3 — Systems
 - [ ] Magnet power-up
 - [ ] Shield power-up
 - [ ] Score multiplier power-up
 - [ ] Jetpack power-up
 - [ ] Combo meter and decay timer
 
-### P3 — Audio / Drama
+### P4 — Audio / Drama
 - [ ] Expanded SFX map
 - [ ] Better BGM loop strategy
 - [ ] Pursuing monster prototype
 - [ ] Checkpoint celebration loop
 - [ ] Death sequence polish
 
-### P4 — Visual Variety
+### P5 — Visual Variety
 - [ ] Theme cycling system
 - [ ] Parallax skyline through openings
 - [ ] Dynamic/flickering neon lights
 - [ ] Hit FX post stack ideas
 
-### P5 — Performance / PWA
+### P6 — Performance / PWA
 - [ ] Object pooling plan for obstacles/coins/VFX
 - [ ] Adaptive quality strategy
 - [ ] Re-enable service worker safely

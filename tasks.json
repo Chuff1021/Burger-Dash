@@ -17,7 +17,7 @@
   "currentFocus": [
     "visual map/corner debugging",
     "gameplay fairness and readability",
-    "burger-joint UI identity"
+    "build-mode-ready architecture"
   ],
   "tasks": [
     {
@@ -53,12 +53,12 @@
       "notes": "Make the game fantasy obvious without changing core systems."
     },
     {
-      "id": "p2-build-mode-exploration",
+      "id": "p2-build-mode-foundation",
       "priority": "P2",
       "owner": "orchestrator",
       "status": "todo",
-      "title": "Explore Roblox-like Build Mode / editable map direction",
-      "notes": "Only after the current runner map is mechanically and visually trustworthy."
+      "title": "Prepare data-driven map architecture for Build Mode",
+      "notes": "After the runner is trustworthy, convert the track into editable map data so a kid-friendly builder can sit on top without sacrificing the game's custom visuals."
     }
   ]
 }

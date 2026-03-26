@@ -8,6 +8,8 @@
 - Progress should happen through additive, localized, testable batches.
 - Fun and readability outrank new features.
 - Character select and progression are important, but secondary to core-run quality.
+- Burger Dash should evolve toward a data-driven map system that can support a kid-friendly Build Mode / editable-map workflow after the runner is trustworthy.
+- The project should keep custom/premium visuals and not drift toward a Roblox-like visual style.
 - Repo-backed memory is the authority, not chat context.
 
 ## Operating Decision

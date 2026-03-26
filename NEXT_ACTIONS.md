@@ -6,7 +6,8 @@
 3. Verify the turn reads correctly in the live build before broader polish.
 4. Improve coin and obstacle visual quality once map trust is restored.
 5. Resume chaser/UI identity polish only after the corridor geometry is visibly correct.
-6. Explore Build Mode / editable-map direction only after the current runner is trustworthy.
+6. After the runner is trustworthy, convert the track into data-driven map pieces.
+7. Then begin Build Mode / editable-map groundwork on top of that map schema.
 
 ## Immediate Safe Tasks
 - Capture visual evidence of the bad turn geometry from the running build.

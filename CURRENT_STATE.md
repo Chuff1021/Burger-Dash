@@ -23,7 +23,7 @@ Burger Dash has a shippable runner foundation with multiple pushed batches acros
 1. Visually debug the live map/corner geometry instead of guessing from code alone.
 2. Fix any remaining wall pieces protruding into the turn path.
 3. Improve coin and obstacle visual quality after map trust is restored.
-4. Preserve the runner as the core experience while capturing the new Build Mode idea as a later phase.
+4. Preserve the runner as the core experience while preparing the architecture for a later Build Mode.
 
 ## Current Risks
 - The user still sees a wall physically blocking the turn, which means the map is not yet visually trustworthy.
@@ -32,4 +32,4 @@ Burger Dash has a shippable runner foundation with multiple pushed batches acros
 - Blind environment iteration is lower value than rendered-scene inspection right now.
 
 ## Product Direction Update
-The user expressed clear interest in a Roblox-like workflow where the current maze/map can be edited and then immediately run with the character. This is promising, but it is a **phase-two direction** after current map correctness and core readability are fixed.
+The user explicitly approved a Roblox-like workflow where the current maze/map can be edited and then immediately run with the character, while keeping higher-end custom visuals rather than looking like Roblox. This is now an official product direction, but it remains **phase two** after current map correctness and core readability are fixed.

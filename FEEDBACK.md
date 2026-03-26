@@ -18,3 +18,4 @@ Use this file to capture human feedback verbatim enough to preserve intent, then
 - New feedback: jumping over obstacles can still incorrectly cause damage.
 - New feedback: player is stuck running straight and cannot move left/right to dodge obstacles or collect coins.
 - New feedback: even after recent fixes, there is still a wall in front of the turn and the turn design still looks terrible.
+- User approved the new product direction: Burger Dash should become a polished runner plus a kid-friendly Build Mode / editable-map system, while keeping custom higher-end visuals rather than looking like Roblox.

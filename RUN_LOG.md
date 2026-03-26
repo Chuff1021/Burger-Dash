@@ -12,3 +12,9 @@
 - Corrected project memory after failed QA/user feedback on the turn system.
 - Re-opened backlog items for turn readability and blocked turn opening bug.
 - Recorded that the previous turn-fix claim should not be treated as complete until visually verified in the live build.
+
+## 2026-03-26 17:50 UTC — Orchestrator
+- Re-read project memory and git status.
+- Locked in the new product direction: Burger Dash should evolve into a polished runner plus a kid-friendly Build Mode / editable-map system.
+- Updated project memory so Build Mode is treated as an official later-phase direction built on top of a future data-driven map architecture.
+- Kept the immediate top priority unchanged: fix the current turn/path bug before broader architectural work.
