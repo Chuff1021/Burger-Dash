@@ -18,5 +18,4 @@
 - Shipped a core bug-fix pass: opened turn entrances on both corridor sides where needed, lengthened hallways, restored left/right lane movement, and tightened jump obstacle fairness.
 - Shipped a direct corner/fail-state batch: enlarged turn-side openings, removed intrusive turn-frame geometry, and made missed turns fail immediately instead of sending the player off the map.
 - Shipped a turn-logic batch: widened the active turn window, snap-biased the player into the next corridor on successful turns, and changed missed-turn failure to trigger earlier and more reliably.
-- Shipped a segment-detection batch: current segment selection now uses actual corridor containment/progress instead of the last passed segment, which should make turns commit in the correct corridor and fail sooner when missed.
 - Push/deploy workflow is approved and expected after meaningful safe batches.

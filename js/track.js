@@ -320,23 +320,13 @@ class RoadSegment {
     this.group.position.copy(pos).add(mid);
   }
 
-  getAxisProgress(p) {
-    switch (this.direction) {
-      case 0: return this.startPos.z - p.z;
-      case 1: return p.x - this.startPos.x;
-      case 2: return p.z - this.startPos.z;
-      case 3: return this.startPos.x - p.x;
-      default: return 0;
-    }
-  }
-
-  containsPoint(p, margin = 2.5) {
-    const progress = this.getAxisProgress(p);
-    return progress >= -margin && progress <= ROAD_LENGTH + margin;
-  }
-
   checkPassed(p) {
-    return this.getAxisProgress(p) > 0;
+    switch (this.direction) {
+      case 0: return p.z < this.startPos.z;
+      case 1: return p.x > this.startPos.x;
+      case 2: return p.z > this.startPos.z;
+      case 3: return p.x < this.startPos.x;
+    }
   }
 
   checkComplete(p) {
@@ -480,8 +470,7 @@ export class TrackManager {
 
   getCurrentSegment(playerPos) {
     for (let i = this.segments.length - 1; i >= 0; i--) {
-      const seg = this.segments[i];
-      if (seg.containsPoint(playerPos)) return seg;
+      if (this.segments[i].passed) return this.segments[i];
     }
     return this.segments[0];
   }
@@ -493,8 +482,10 @@ export class TrackManager {
   }
 
   getTurnWindow(segment, playerPos) {
+    const total = segment.startPos.distanceTo(segment.endPos);
+    const traveled = segment.startPos.distanceTo(playerPos);
     return {
-      progress: THREE.MathUtils.clamp(segment.getAxisProgress(playerPos) / Math.max(ROAD_LENGTH, 0.001), 0, 1)
+      progress: THREE.MathUtils.clamp(traveled / Math.max(total, 0.001), 0, 1)
     };
   }
 
