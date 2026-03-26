@@ -1,0 +1,64 @@
+{
+  "project": "Burger Dash",
+  "lastUpdated": "2026-03-26",
+  "rules": {
+    "doNotRewrite": [
+      "js/game.js",
+      "js/track.js",
+      "js/player.js"
+    ],
+    "pauseBefore": [
+      "deletions",
+      "architecture rewrites",
+      "deploy-affecting changes",
+      "incompatible save changes"
+    ]
+  },
+  "currentFocus": [
+    "visual map/corner debugging",
+    "gameplay fairness and readability",
+    "burger-joint UI identity"
+  ],
+  "tasks": [
+    {
+      "id": "p0-visual-turn-debug",
+      "priority": "P0",
+      "owner": "orchestrator",
+      "status": "in_progress",
+      "title": "Visually inspect and fix live corner geometry",
+      "notes": "User still sees a wall protruding into the turn. Use rendered-scene inspection before more blind geometry iteration."
+    },
+    {
+      "id": "p0-fairness-pass",
+      "priority": "P0",
+      "owner": "gameplay-core",
+      "status": "todo",
+      "title": "Tune obstacle and coin readability at speed",
+      "notes": "Continue only after the turn path is visually trustworthy."
+    },
+    {
+      "id": "p0-chaser-polish",
+      "priority": "P0",
+      "owner": "chaser",
+      "status": "todo",
+      "title": "Polish chaser pressure and catch presentation",
+      "notes": "Make chase state more readable and dramatic without feeling unfair."
+    },
+    {
+      "id": "p0-ui-identity",
+      "priority": "P0",
+      "owner": "ui-ux",
+      "status": "todo",
+      "title": "Strengthen burger-joint identity in HUD and game-over flow",
+      "notes": "Make the game fantasy obvious without changing core systems."
+    },
+    {
+      "id": "p2-build-mode-exploration",
+      "priority": "P2",
+      "owner": "orchestrator",
+      "status": "todo",
+      "title": "Explore Roblox-like Build Mode / editable map direction",
+      "notes": "Only after the current runner map is mechanically and visually trustworthy."
+    }
+  ]
+}
