@@ -481,6 +481,14 @@ export class TrackManager {
     return null;
   }
 
+  getTurnWindow(segment, playerPos) {
+    const total = segment.startPos.distanceTo(segment.endPos);
+    const traveled = segment.startPos.distanceTo(playerPos);
+    return {
+      progress: THREE.MathUtils.clamp(traveled / Math.max(total, 0.001), 0, 1)
+    };
+  }
+
   getSpeed() { return this.speed; }
   getDistance() { return this.distance; }
 

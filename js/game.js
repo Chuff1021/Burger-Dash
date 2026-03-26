@@ -176,10 +176,8 @@ class Game {
     const nextSeg = this.track.getNextSegment(currentSeg);
     const nextDir = nextSeg?.direction;
     const curDir = currentSeg.direction;
-    const turnZoneStart = 0.68;
-    const segLength = currentSeg.startPos.distanceTo(currentSeg.endPos);
-    const progress = Math.min(1, currentSeg.startPos.distanceTo(playerPos) / Math.max(segLength, 0.001));
-    const inTurnZone = progress >= turnZoneStart && nextSeg && nextDir !== curDir;
+    const turnData = this.track.getTurnWindow(currentSeg, playerPos);
+    const inTurnZone = nextSeg && nextDir !== curDir && turnData.progress >= 0.5;
 
     if (inTurnZone) {
       const leftDir = (curDir - 1 + 4) % 4;
@@ -188,7 +186,7 @@ class Game {
         this.beginCameraTurn(curDir, nextDir);
         if (nextDir === leftDir) this.player.turnLeft();
         else this.player.turnRight();
-        this.snapPlayer(currentSeg);
+        this.snapPlayer(currentSeg, nextDir);
         AudioManager.play('laneSwitch');
         return;
       }
@@ -198,11 +196,16 @@ class Game {
     if (laneMoved) AudioManager.play('laneSwitch');
   }
 
-  snapPlayer(seg) {
+  snapPlayer(seg, nextDir = null) {
     const pos = this.player.getPosition();
-    // Snap to the turn intersection point
+    // Snap to the turn intersection point, then bias slightly into the next corridor
     pos.x = seg.endPos.x;
     pos.z = seg.endPos.z;
+    if (nextDir !== null) {
+      const forward = DIR_VECTORS[nextDir].clone().multiplyScalar(1.4);
+      pos.x += forward.x;
+      pos.z += forward.z;
+    }
   }
 
   beginCameraTurn(fromDir, toDir) {
@@ -332,9 +335,10 @@ class Game {
     const seg = this.track.getCurrentSegment(nextPlayerPos);
     if (seg) {
       const next = this.track.getNextSegment(seg);
-      if (next && seg.checkOvershot(nextPlayerPos) && next.direction !== seg.direction) {
-        // Player missed the turn — immediate fail, no flying into space.
-        if (this.player.getDirection() === seg.direction) {
+      if (next && next.direction !== seg.direction) {
+        const turnWindow = this.track.getTurnWindow(seg, nextPlayerPos);
+        const missedTurn = this.player.getDirection() === seg.direction && turnWindow.progress >= 0.88;
+        if (missedTurn) {
           this.lives = 0;
           this.player.hit();
           AudioManager.play('hit');
