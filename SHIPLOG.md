@@ -14,4 +14,5 @@
 - Added first chaser pod prototype: a visible burger-joint villain pursuing behind the player with distance pressure tied to hits, checkpoints, and clean recovery.
 - Added first environment/theme pass to the corridor system: burger-joint palette shift, neon signage, menu boards, fryer/tray props, and warmer arcade lighting accents.
 - Added a gameplay fairness pass to reduce clutter near turns and improve obstacle/coin readability at higher speeds.
-- Push is currently blocked by SSH config file permissions for this OpenClaw process (`/data/.ssh/config`).
+- Added a turn readability pass: framed turn openings, side guidance arrows/lights, and floor guide strips so corners read more intentionally.
+- Push/deploy workflow is approved and expected after meaningful safe batches.

@@ -5,6 +5,7 @@ export const ROAD_LENGTH = 20;
 export const ROAD_WIDTH = 4;
 const WALL_HEIGHT = 3;
 const OPENING_SIZE = 5; // gap in wall at turn points
+const WALL_THICKNESS = 0.3;
 
 export const DIR_VECTORS = [
   new THREE.Vector3(0, 0, -1),  // 0: Z- (default forward)
@@ -92,6 +93,26 @@ function makeSignTexture(label, bg = '#B91C1C', fg = '#FDE68A') {
   return tex;
 }
 
+function addTurnFloorGuides(group, turnInfo) {
+  if (!turnInfo?.nextTurn || turnInfo.nextTurn === 'straight') return;
+
+  const side = turnInfo.nextTurn === 'left' ? -1 : 1;
+  for (let i = 0; i < 3; i++) {
+    const guide = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.42, 1.15),
+      new THREE.MeshStandardMaterial({ color: 0xffe08a, emissive: 0xff8a00, emissiveIntensity: 0.42, transparent: true, opacity: 0.88 })
+    );
+    guide.rotation.x = -Math.PI / 2;
+    guide.position.set(
+      side * (0.35 + i * 0.38),
+      0.02,
+      -ROAD_LENGTH / 2 + 2.1 + i * 1.25
+    );
+    guide.rotation.z = side * (0.28 + i * 0.06);
+    group.add(guide);
+  }
+}
+
 function addBurgerDecor(group, turnInfo) {
   const signTexts = ['FRESH BURGERS', 'HOT FRIES', 'DOUBLE STACK', 'SHAKES', 'COMBO UP'];
   const signTex = makeSignTexture(signTexts[Math.floor(Math.random() * signTexts.length)]);
@@ -158,45 +179,70 @@ function addBurgerDecor(group, turnInfo) {
   }
 }
 
+function createWallPiece(x, z, length) {
+  const wall = new THREE.Mesh(
+    new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, length),
+    wallMat
+  );
+  wall.position.set(x, WALL_HEIGHT / 2, z);
+  wall.receiveShadow = true;
+  wall.castShadow = true;
+  return wall;
+}
+
+function addTurnFrame(group, side, openEnd) {
+  const sideSign = Math.sign(side) || 1;
+  const x = sideSign * (ROAD_WIDTH / 2 + WALL_THICKNESS * 0.5);
+  const openingCenterZ = openEnd === 'end'
+    ? -ROAD_LENGTH / 2 + OPENING_SIZE / 2
+    : ROAD_LENGTH / 2 - OPENING_SIZE / 2;
+  const openingEdgeZ = openEnd === 'end'
+    ? -ROAD_LENGTH / 2 + OPENING_SIZE
+    : ROAD_LENGTH / 2 - OPENING_SIZE;
+
+  const jambMat = metalMat;
+  const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.24, WALL_HEIGHT, 0.24), jambMat);
+  jamb.position.set(x, WALL_HEIGHT / 2, openingEdgeZ);
+  group.add(jamb);
+
+  const top = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, OPENING_SIZE + 0.2), jambMat);
+  top.position.set(x, WALL_HEIGHT - 0.18, openingCenterZ);
+  group.add(top);
+
+  const stripe = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, WALL_HEIGHT - 0.3, OPENING_SIZE - 0.2),
+    new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: 0xff7a00, emissiveIntensity: 0.5, roughness: 0.35 })
+  );
+  stripe.position.set(x - sideSign * 0.12, WALL_HEIGHT / 2, openingCenterZ);
+  group.add(stripe);
+
+  const arrow = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.5), neonMat);
+  arrow.position.set(sideSign * (ROAD_WIDTH / 2 - 0.32), 1.15, openingCenterZ);
+  arrow.rotation.y = sideSign < 0 ? Math.PI / 2 : -Math.PI / 2;
+  group.add(arrow);
+
+  const guideLight = new THREE.PointLight(0xff9f1c, 0.5, 5.5);
+  guideLight.position.set(sideSign * (ROAD_WIDTH / 2 - 0.4), 1.8, openingCenterZ);
+  group.add(guideLight);
+}
+
 function buildWall(side, openEnd) {
   const group = new THREE.Group();
-  const x = side * (ROAD_WIDTH / 2 + 0.15);
+  const x = side * (ROAD_WIDTH / 2 + WALL_THICKNESS / 2);
 
   if (!openEnd) {
-    // Full wall
-    const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, WALL_HEIGHT, ROAD_LENGTH),
-      wallMat
-    );
-    wall.position.set(x, WALL_HEIGHT / 2, 0);
-    wall.receiveShadow = true;
-    group.add(wall);
+    group.add(createWallPiece(x, 0, ROAD_LENGTH));
   } else {
-    // Wall with gap — split into two parts
     const solidLength = ROAD_LENGTH - OPENING_SIZE;
-    const halfSolid = solidLength / 2;
+    const pieceLength = solidLength;
 
     if (openEnd === 'end') {
-      // Solid from start to (end - opening)
-      const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.3, WALL_HEIGHT, solidLength),
-        wallMat
-      );
-      // In local space, z=0 is center. Start is z=+ROAD_LENGTH/2, end is z=-ROAD_LENGTH/2
-      // So "end" opening means gap near z=-ROAD_LENGTH/2
-      wall.position.set(x, WALL_HEIGHT / 2, OPENING_SIZE / 2);
-      wall.receiveShadow = true;
-      group.add(wall);
+      group.add(createWallPiece(x, OPENING_SIZE / 2, pieceLength));
     } else {
-      // Solid from (start + opening) to end
-      const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.3, WALL_HEIGHT, solidLength),
-        wallMat
-      );
-      wall.position.set(x, WALL_HEIGHT / 2, -OPENING_SIZE / 2);
-      wall.receiveShadow = true;
-      group.add(wall);
+      group.add(createWallPiece(x, -OPENING_SIZE / 2, pieceLength));
     }
+
+    addTurnFrame(group, side, openEnd);
   }
 
   return group;
@@ -257,6 +303,7 @@ class RoadSegment {
     this.group.add(light);
 
     // Burger-joint decor pass
+    addTurnFloorGuides(this.group, turnInfo);
     addBurgerDecor(this.group, turnInfo);
 
     // Transform to world space

@@ -23,6 +23,10 @@
 - [x] Landing dust / obstacle hit particles
 - [x] Chaser/villain prototype behind player
 - [x] Chase pressure logic tied to mistakes and recovery
+- [x] Turn readability / corridor opening visual fix
+- [ ] Better pre-turn player freedom / feel
+- [ ] Coin visual quality pass
+- [ ] Obstacle visual quality pass
 
 ### P0.5 — Brand & Theme Direction
 - [x] Modern fast-food burger joint environment pass

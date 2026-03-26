@@ -10,3 +10,6 @@ Use this file to capture human feedback verbatim enough to preserve intent, then
 - Theme direction: modern, fun fast-food burger joint.
 - New requirement: add a villain/chaser behind the player.
 - User asked for the project to be organized like a multi-agent game development company.
+- New feedback: current turning flow feels too constrained because the player can only really go straight until the turn.
+- New feedback: walls/openings at turns look bad and visually illogical.
+- New feedback: coins and obstacles look low quality and need a visual quality pass.
