@@ -177,7 +177,7 @@ class Game {
     const nextDir = nextSeg?.direction;
     const curDir = currentSeg.direction;
     const turnData = this.track.getTurnWindow(currentSeg, playerPos);
-    const inTurnZone = nextSeg && nextDir !== curDir && turnData.progress >= 0.5;
+    const inTurnZone = nextSeg && nextDir !== curDir && turnData.progress >= 0.42;
 
     if (inTurnZone) {
       const leftDir = (curDir - 1 + 4) % 4;
@@ -337,7 +337,7 @@ class Game {
       const next = this.track.getNextSegment(seg);
       if (next && next.direction !== seg.direction) {
         const turnWindow = this.track.getTurnWindow(seg, nextPlayerPos);
-        const missedTurn = this.player.getDirection() === seg.direction && turnWindow.progress >= 0.88;
+        const missedTurn = this.player.getDirection() === seg.direction && turnWindow.progress >= 0.76;
         if (missedTurn) {
           this.lives = 0;
           this.player.hit();
