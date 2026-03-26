@@ -22,7 +22,7 @@ export class Player {
     // Direction and movement
     this.direction = 0; // 0-3 cardinal (same as track)
     this.velocityY = 0;
-    this.isGrounded = true;
+    this.grounded = true;
     this.state = 'running'; // running, jumping, sliding, hit, dead
 
     // Timers
@@ -32,6 +32,11 @@ export class Player {
 
     // Collision
     this.collisionBox = new THREE.Box3();
+
+    // Turn feel
+    this.visualTurn = 0;
+    this.turnLean = 0;
+    this.turnMomentum = 0;
   }
 
   async init(scene) {
@@ -153,11 +158,14 @@ export class Player {
   reset() {
     this.direction = 0;
     this.velocityY = 0;
-    this.isGrounded = true;
+    this.grounded = true;
     this.state = 'running';
     this.slideTimer = 0;
     this.invincibleTimer = 0;
     this.time = 0;
+    this.visualTurn = this.direction;
+    this.turnLean = 0;
+    this.turnMomentum = 0;
 
     if (this.model) {
       this.model.position.set(0, 0, -2);
@@ -187,13 +195,13 @@ export class Player {
     this.model.position.z += dirVec.z * moveAmount;
 
     // Jump physics
-    if (!this.isGrounded) {
+    if (!this.grounded) {
       this.velocityY += GRAVITY * delta;
       this.model.position.y += this.velocityY * delta;
       if (this.model.position.y <= 0) {
         this.model.position.y = 0;
         this.velocityY = 0;
-        this.isGrounded = true;
+        this.grounded = true;
         if (this.state === 'jumping') {
           this.state = 'running';
           this.switchAnimation('run');
@@ -225,9 +233,15 @@ export class Player {
       }
     }
 
-    // Player rotation to face current direction
+    // Player rotation / lean for smoother turns
     const targetRotY = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][this.direction];
-    this.model.rotation.y = THREE.MathUtils.lerp(this.model.rotation.y, targetRotY, delta * 15);
+    const current = this.model.rotation.y;
+    const deltaRot = Math.atan2(Math.sin(targetRotY - current), Math.cos(targetRotY - current));
+    this.model.rotation.y = current + deltaRot * Math.min(delta * 11, 1);
+    const targetLean = THREE.MathUtils.clamp(-deltaRot * 0.6, -0.32, 0.32);
+    this.turnMomentum = THREE.MathUtils.lerp(this.turnMomentum, deltaRot, Math.min(delta * 8, 1));
+    this.turnLean = THREE.MathUtils.lerp(this.turnLean, targetLean, Math.min(delta * 10, 1));
+    this.model.rotation.z = this.turnLean;
 
     // Update collision box
     const pos = this.model.position;
@@ -260,13 +274,13 @@ export class Player {
   }
 
   jump() {
-    if (this.state === 'dead' || this.state === 'hit' || !this.isGrounded) return;
+    if (this.state === 'dead' || this.state === 'hit' || !this.grounded) return;
     if (this.state === 'sliding') {
       this.model.scale.setScalar(this.modelScale);
     }
     this.state = 'jumping';
     this.velocityY = JUMP_FORCE;
-    this.isGrounded = false;
+    this.grounded = false;
     this.switchAnimation('jump');
   }
 
@@ -274,6 +288,9 @@ export class Player {
     if (this.state === 'dead' || this.state === 'hit' || this.state === 'jumping') return;
     this.state = 'sliding';
     this.slideTimer = SLIDE_DURATION;
+    if (this.model && this.modelScale) {
+      this.model.scale.set(this.modelScale, this.modelScale * 0.72, this.modelScale);
+    }
     this.switchAnimation('roll');
   }
 
@@ -300,5 +317,6 @@ export class Player {
   getDirection() { return this.direction; }
   getState() { return this.state; }
   getCollisionBox() { return this.collisionBox; }
+  get isGrounded() { return this.grounded; }
   isInvincible() { return this.invincibleTimer > 0 || this.state === 'hit'; }
 }

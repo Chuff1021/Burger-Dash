@@ -14,7 +14,7 @@ export const DIR_VECTORS = [
 ];
 
 // Shared resources
-let roadMat = null, wallMat = null;
+let roadMat = null, wallMat = null, neonMat = null, metalMat = null;
 
 function initMaterials() {
   if (roadMat) return;
@@ -23,7 +23,7 @@ function initMaterials() {
   const rc = document.createElement('canvas');
   rc.width = 128; rc.height = 256;
   const rctx = rc.getContext('2d');
-  rctx.fillStyle = '#665544';
+  rctx.fillStyle = '#6b4f3a';
   rctx.fillRect(0, 0, 128, 256);
   for (let y = 0; y < 8; y++) {
     for (let x = 0; x < 4; x++) {
@@ -44,12 +44,12 @@ function initMaterials() {
   const wc = document.createElement('canvas');
   wc.width = 64; wc.height = 128;
   const wctx = wc.getContext('2d');
-  wctx.fillStyle = '#443322';
+  wctx.fillStyle = '#6b1f1f';
   wctx.fillRect(0, 0, 64, 128);
   for (let y = 0; y < 4; y++) {
     for (let x = 0; x < 2; x++) {
       const off = y % 2 === 0 ? 0 : 16;
-      wctx.fillStyle = `rgb(${55+Math.random()*30},${38+Math.random()*20},${22+Math.random()*15})`;
+      wctx.fillStyle = `rgb(${130+Math.random()*40},${35+Math.random()*22},${28+Math.random()*18})`;
       wctx.fillRect(x * 32 + off + 1, y * 32 + 1, 30, 30);
     }
   }
@@ -57,10 +57,107 @@ function initMaterials() {
   wtex.wrapS = wtex.wrapT = THREE.RepeatWrapping;
   wtex.repeat.set(1, 3);
   wallMat = new THREE.MeshStandardMaterial({ map: wtex, roughness: 0.8 });
+
+  neonMat = new THREE.MeshStandardMaterial({
+    color: 0xffd447,
+    emissive: 0xff7a00,
+    emissiveIntensity: 1.2,
+    roughness: 0.25,
+    metalness: 0.1
+  });
+  metalMat = new THREE.MeshStandardMaterial({
+    color: 0x9aa4b2,
+    roughness: 0.35,
+    metalness: 0.75
+  });
 }
 
 // Build a wall with an optional opening at one end
 // openEnd: null | 'start' | 'end' — which end to leave a gap
+function makeSignTexture(label, bg = '#B91C1C', fg = '#FDE68A') {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 96;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(8, 8, c.width - 16, c.height - 16);
+  ctx.fillStyle = fg;
+  ctx.font = 'bold 26px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, c.width / 2, c.height / 2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function addBurgerDecor(group, turnInfo) {
+  const signTexts = ['FRESH BURGERS', 'HOT FRIES', 'DOUBLE STACK', 'SHAKES', 'COMBO UP'];
+  const signTex = makeSignTexture(signTexts[Math.floor(Math.random() * signTexts.length)]);
+  const signMat = new THREE.MeshStandardMaterial({
+    map: signTex,
+    emissive: new THREE.Color(0xff9f1c),
+    emissiveMap: signTex,
+    emissiveIntensity: 0.65,
+    roughness: 0.45,
+    metalness: 0.08
+  });
+
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.62), signMat);
+  sign.position.set(side * (ROAD_WIDTH / 2 - 0.22), 1.8, THREE.MathUtils.randFloat(-5.5, 4.5));
+  sign.rotation.y = side === -1 ? Math.PI / 2 : -Math.PI / 2;
+  group.add(sign);
+
+  const signGlow = new THREE.PointLight(side === -1 ? 0xff7a00 : 0xffcc55, 0.45, 5);
+  signGlow.position.copy(sign.position).add(new THREE.Vector3(side * -0.08, 0.05, 0));
+  group.add(signGlow);
+
+  const menuBoard = new THREE.Mesh(
+    new THREE.BoxGeometry(0.18, 1.1, 0.9),
+    metalMat
+  );
+  menuBoard.position.set(-side * (ROAD_WIDTH / 2 - 0.12), 1.35, THREE.MathUtils.randFloat(-6, 5));
+  group.add(menuBoard);
+
+  const menuFace = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.7, 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x101828, emissive: 0x11ffee, emissiveIntensity: 0.22 })
+  );
+  menuFace.position.copy(menuBoard.position).add(new THREE.Vector3(-Math.sign(menuBoard.position.x) * 0.11, 0, 0));
+  menuFace.rotation.y = menuBoard.position.x > 0 ? Math.PI / 2 : -Math.PI / 2;
+  group.add(menuFace);
+
+  const fryer = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 0.55), metalMat);
+  fryer.position.set(side * (ROAD_WIDTH / 2 - 0.55), 0.33, THREE.MathUtils.randFloat(-3.5, 3.5));
+  group.add(fryer);
+
+  const fryGlow = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.2), neonMat);
+  fryGlow.position.copy(fryer.position).add(new THREE.Vector3(0, 0.38, 0));
+  group.add(fryGlow);
+
+  for (const trayOffset of [-0.18, 0.18]) {
+    const tray = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.04, 0.24), metalMat);
+    tray.position.set(-side * (ROAD_WIDTH / 2 - 0.58), 0.88, trayOffset + THREE.MathUtils.randFloat(-3, 3));
+    group.add(tray);
+  }
+
+  const ceilingStrip = new THREE.Mesh(
+    new THREE.BoxGeometry(ROAD_WIDTH - 0.35, 0.05, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: 0xffd447, emissiveIntensity: 0.35, roughness: 0.35 })
+  );
+  ceilingStrip.position.set(0, WALL_HEIGHT - 0.08, THREE.MathUtils.randFloat(-4.5, 4.5));
+  group.add(ceilingStrip);
+
+  if (turnInfo?.nextTurn && turnInfo.nextTurn !== 'straight') {
+    const arrow = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.42), neonMat);
+    arrow.position.set(0, 2.1, -ROAD_LENGTH / 2 + 1.4);
+    arrow.rotation.y = turnInfo.nextTurn === 'left' ? Math.PI / 2 : -Math.PI / 2;
+    group.add(arrow);
+  }
+}
+
 function buildWall(side, openEnd) {
   const group = new THREE.Group();
   const x = side * (ROAD_WIDTH / 2 + 0.15);
@@ -158,6 +255,9 @@ class RoadSegment {
     const light = new THREE.PointLight(0xFF8C00, 0.5, 15);
     light.position.set(0, 2.5, 0);
     this.group.add(light);
+
+    // Burger-joint decor pass
+    addBurgerDecor(this.group, turnInfo);
 
     // Transform to world space
     this.applyTransform(direction, position);
@@ -290,7 +390,14 @@ export class TrackManager {
 
   update(delta, playerPos) {
     this.distance += this.speed * delta;
-    this.speed = Math.min(this.maxSpeed, 14 + this.distance / 200);
+
+    const distanceFactor = THREE.MathUtils.clamp(this.distance / 1800, 0, 1);
+    const earlyBoost = Math.min(this.distance / 220, 3.4);
+    const midBoost = Math.max(0, Math.min((this.distance - 280) / 380, 1)) * 4.2;
+    const lateBoost = Math.pow(distanceFactor, 1.65) * 5.8;
+    const targetSpeed = Math.min(this.maxSpeed, 14 + earlyBoost + midBoost + lateBoost);
+    const accel = targetSpeed > this.speed ? 0.85 : 1.3;
+    this.speed = THREE.MathUtils.lerp(this.speed, targetSpeed, Math.min(delta * accel, 1));
 
     for (let i = 0; i < this.segments.length; i++) {
       const seg = this.segments[i];
