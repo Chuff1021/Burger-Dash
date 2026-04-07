@@ -468,18 +468,26 @@ export class TrackManager {
     }
   }
 
-  getCurrentSegment(playerPos) {
-    // Find the last segment whose start the player has passed AND whose end isn't
-    // far behind them — guards against future segments with opposite directions
-    // having their checkPassed accidentally return true.
+  // playerDir is optional but critical: checkPassed() is single-axis so a future segment
+  // going in X can falsely become "passed" as soon as the player has any X offset from
+  // lane-switching. Filtering by direction prevents that false match.
+  getCurrentSegment(playerPos, playerDir = null) {
+    // First pass: only consider segments matching the player's travel direction
+    if (playerDir !== null) {
+      for (let i = this.segments.length - 1; i >= 0; i--) {
+        const seg = this.segments[i];
+        if (!seg.passed || seg.direction !== playerDir) continue;
+        const dist = this.getDistToEnd(seg, playerPos);
+        if (dist > -10) return seg;
+      }
+    }
+    // Fallback: direction-agnostic (same guard against massive overrun)
     for (let i = this.segments.length - 1; i >= 0; i--) {
       const seg = this.segments[i];
       if (!seg.passed) continue;
-      // Make sure the player hasn't gone way past this segment's end
       const dist = this.getDistToEnd(seg, playerPos);
-      if (dist > -10) return seg; // still at or near/before this segment's end
+      if (dist > -10) return seg;
     }
-    // Fallback
     for (let i = this.segments.length - 1; i >= 0; i--) {
       if (this.segments[i].passed) return this.segments[i];
     }

@@ -173,7 +173,7 @@ class Game {
 
   handleHorizontal(dir) {
     const playerPos = this.player.getPosition();
-    const currentSeg = this.track.getCurrentSegment(playerPos);
+    const currentSeg = this.track.getCurrentSegment(playerPos, this.player.getDirection());
     if (!currentSeg) return;
 
     const nextSeg = this.track.getNextSegment(currentSeg);
@@ -225,7 +225,7 @@ class Game {
 
   // Called every frame — fires buffered turn when player enters zone, corrects if they overshoot
   processTurns(pp) {
-    const seg = this.track.getCurrentSegment(pp);
+    const seg = this.track.getCurrentSegment(pp, this.player.getDirection());
     if (!seg) return;
 
     const next = this.track.getNextSegment(seg);
