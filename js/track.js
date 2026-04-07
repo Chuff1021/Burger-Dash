@@ -1,7 +1,7 @@
 // track.js — Temple Run turning corridor system with turn openings
 import * as THREE from 'three';
 
-export const ROAD_LENGTH = 28;
+export const ROAD_LENGTH = 40;
 export const ROAD_WIDTH = 4;
 const WALL_HEIGHT = 3;
 const OPENING_SIZE = 8; // larger gap in wall at turn points
@@ -285,8 +285,7 @@ class RoadSegment {
     const rightWallGroup = buildWall(1, rightOpenStart, rightOpenEnd);
     this.group.add(rightWallGroup);
 
-    // End-cap wall — closes the forward face of the corridor so there's no hole
-    // at the far end. The player exits through the side-wall opening, not this wall.
+    // End-cap wall — closes the forward face of the corridor
     const endCap = new THREE.Mesh(
       new THREE.BoxGeometry(ROAD_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
       wallMat
@@ -295,6 +294,60 @@ class RoadSegment {
     endCap.receiveShadow = true;
     endCap.castShadow = true;
     this.group.add(endCap);
+
+    // Ceiling — closes the top of the corridor
+    const ceilingMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROAD_WIDTH + WALL_THICKNESS * 2, ROAD_LENGTH),
+      wallMat
+    );
+    ceilingMesh.rotation.x = Math.PI / 2; // normal faces -Y (visible from below)
+    ceilingMesh.position.set(0, WALL_HEIGHT, 0);
+    this.group.add(ceilingMesh);
+
+    // Corner junction seals — floor fill + outer wall + back wall so there's no void
+    // at the L-shaped corner where two corridors meet.
+    // In local space the road end is at z=-ROAD_LENGTH/2. For a RIGHT turn, the gap
+    // is on the LEFT side (sideSign=-1); for LEFT turn, gap is on the RIGHT (sideSign=+1).
+    if (turnInfo?.nextTurn && turnInfo.nextTurn !== 'straight') {
+      const sideSign = turnInfo.nextTurn === 'right' ? -1 : 1;
+      const hw = ROAD_WIDTH / 2;   // = 2
+      const qw = ROAD_WIDTH / 4;   // = 1
+      const el = ROAD_LENGTH / 2;  // end local z
+
+      // Floor fill in the corner pocket
+      const cf = new THREE.Mesh(
+        new THREE.PlaneGeometry(hw + 0.25, hw + 0.25),
+        roadMat
+      );
+      cf.rotation.x = -Math.PI / 2;
+      cf.position.set(sideSign * qw, 0.001, -el - qw);
+      this.group.add(cf);
+
+      // Outer side wall extension (extends the outer wall past the end cap)
+      const owx = new THREE.Mesh(
+        new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, hw + WALL_THICKNESS * 2),
+        wallMat
+      );
+      owx.position.set(sideSign * (hw + WALL_THICKNESS / 2), WALL_HEIGHT / 2, -el - qw);
+      this.group.add(owx);
+
+      // Back wall of the corner pocket (closes the far end)
+      const bw = new THREE.Mesh(
+        new THREE.BoxGeometry(hw + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
+        wallMat
+      );
+      bw.position.set(sideSign * qw, WALL_HEIGHT / 2, -el - hw);
+      this.group.add(bw);
+
+      // Ceiling over the corner pocket
+      const cc = new THREE.Mesh(
+        new THREE.PlaneGeometry(hw + 0.25, hw + 0.25),
+        wallMat
+      );
+      cc.rotation.x = Math.PI / 2;
+      cc.position.set(sideSign * qw, WALL_HEIGHT, -el - qw);
+      this.group.add(cc);
+    }
 
     // One ceiling beam
     const beamGeo = new THREE.BoxGeometry(ROAD_WIDTH + 0.6, 0.15, 0.25);
@@ -390,8 +443,18 @@ export class TrackManager {
     this.nextDirection = 0;
     this.plannedTurns = [];
 
-    // Plan initial sequence: straight, straight, straight, right, straight, left, straight, right, straight
-    const initial = [0, 0, 0, 2, 0, 1, 0, 2, 0, 0, 1, 0, 2, 0, 1];
+    // Plan a generous opening sequence so turns feel intentional at the start.
+    // 0=straight, 1=left, 2=right
+    const initial = [
+      0, 0, 2,          // three straights then right
+      0, 0, 1,          // two straights then left
+      0, 2, 0, 0,       // right, two straights
+      1, 0, 2,          // left, straight, right
+      0, 0, 1,          // two straights, left
+      0, 2, 0, 1,       // right, straight, left
+      0, 0, 2, 0, 1,    // building pace
+      0, 2, 0, 2, 0, 1, // faster alternating
+    ];
     this.plannedTurns.push(...initial);
 
     // Spawn initial segments
@@ -482,8 +545,8 @@ export class TrackManager {
       while (this.segments.length < segCount + 5) this.spawnNextPlanned();
     }
 
-    // Cleanup old
-    while (this.segments.length > 10) {
+    // Cleanup old — keep at most 8 segments; longer corridors need fewer queued
+    while (this.segments.length > 8) {
       const old = this.segments[0];
       if (old.passed && old.complete) {
         old.dispose();

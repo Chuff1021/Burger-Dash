@@ -96,44 +96,48 @@ export class ObstacleManager {
     return template.clone(true);
   }
 
+  spawnOne(segment, along, laneOffset, kind) {
+    const perp = DIR_VECTORS[(segment.direction + 1) % 4];
+    const pos = segment.startPos.clone()
+      .add(DIR_VECTORS[segment.direction].clone().multiplyScalar(along))
+      .add(perp.clone().multiplyScalar(laneOffset));
+
+    const mesh = this.cloneTemplate(kind);
+    const rotY = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][segment.direction];
+    mesh.rotation.y = rotY;
+    mesh.position.copy(pos);
+    mesh.position.y = 0;
+    mesh.scale.setScalar(kind === 'jump' ? 0.95 : 1.15);
+    this.scene.add(mesh);
+    this.active.push({ kind, mesh, segment, hit: false, passed: false, bobPhase: Math.random() * Math.PI * 2 });
+  }
+
   maybePopulateSegment(segment, difficulty, speed = 14) {
     if (!segment || segment.userData?.obstaclesPopulated) return;
     segment.userData ||= {};
     segment.userData.obstaclesPopulated = true;
 
     const speedT = THREE.MathUtils.clamp((speed - 14) / 14, 0, 1);
-    const chance = THREE.MathUtils.clamp(0.2 + difficulty * 0.34 + speedT * 0.08, 0.2, 0.62);
+    // Increased base + ceiling — longer corridors can sustain more obstacles
+    const chance = THREE.MathUtils.clamp(0.40 + difficulty * 0.45 + speedT * 0.10, 0.40, 0.95);
     if (Math.random() > chance) return;
 
-    const kind = Math.random() < (speedT > 0.45 ? 0.48 : 0.62) ? 'jump' : 'slide';
-    const along = THREE.MathUtils.lerp(0.5, 0.68, 1 - speedT) * ROAD_LENGTH + THREE.MathUtils.randFloat(-0.6, 1.1);
-    const perp = DIR_VECTORS[(segment.direction + 1) % 4];
-    const laneOffset = [-0.95, 0, 0.95][Math.floor(Math.random() * 3)];
-    const pos = segment.startPos.clone()
-      .add(DIR_VECTORS[segment.direction].clone().multiplyScalar(along))
-      .add(perp.clone().multiplyScalar(laneOffset));
+    const lanes = [-0.95, 0, 0.95];
+    // First obstacle: placed in the early-middle of the segment
+    const kind1 = Math.random() < (speedT > 0.45 ? 0.48 : 0.62) ? 'jump' : 'slide';
+    const along1 = THREE.MathUtils.lerp(0.28, 0.48, Math.random()) * ROAD_LENGTH;
+    const lane1 = lanes[Math.floor(Math.random() * 3)];
+    this.spawnOne(segment, along1, lane1, kind1);
 
-    const mesh = this.cloneTemplate(kind);
-    const facing = segment.direction;
-    const rotY = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][facing];
-    mesh.rotation.y = rotY;
-    mesh.position.copy(pos);
-    mesh.position.y = 0;
-
-    const scale = kind === 'jump' ? 0.95 : 1.15;
-    mesh.scale.setScalar(scale);
-
-    this.scene.add(mesh);
-
-    const obstacle = {
-      kind,
-      mesh,
-      segment,
-      hit: false,
-      passed: false,
-      bobPhase: Math.random() * Math.PI * 2
-    };
-    this.active.push(obstacle);
+    // Second obstacle at higher difficulty: different lane and kind, placed further down
+    if (difficulty > 0.35 && Math.random() < difficulty * 0.75) {
+      const kind2 = kind1 === 'jump' ? 'slide' : 'jump'; // alternate kind for variety
+      const along2 = THREE.MathUtils.lerp(0.58, 0.75, Math.random()) * ROAD_LENGTH;
+      // Pick a different lane from the first
+      const otherLanes = lanes.filter(l => l !== lane1);
+      const lane2 = otherLanes[Math.floor(Math.random() * otherLanes.length)];
+      this.spawnOne(segment, along2, lane2, kind2);
+    }
   }
 
   update(delta, track, player, effects) {
