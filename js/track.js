@@ -185,12 +185,12 @@ class RoadSegment {
   }
 
   checkComplete(p) {
-    const m = 6; // generous turn zone
+    const m = 6; // mark complete when within 6 units of end
     switch (this.direction) {
       case 0: return p.z < this.endPos.z + m;
       case 1: return p.x > this.endPos.x - m;
       case 2: return p.z > this.endPos.z - m;
-      case 3: return p.x < this.endPos.x - m;
+      case 3: return p.x < this.endPos.x + m; // was - m (bug: was marking 6 past end, not 6 before)
     }
   }
 
@@ -314,6 +314,17 @@ export class TrackManager {
   }
 
   getCurrentSegment(playerPos) {
+    // Find the last segment whose start the player has passed AND whose end isn't
+    // far behind them — guards against future segments with opposite directions
+    // having their checkPassed accidentally return true.
+    for (let i = this.segments.length - 1; i >= 0; i--) {
+      const seg = this.segments[i];
+      if (!seg.passed) continue;
+      // Make sure the player hasn't gone way past this segment's end
+      const dist = this.getDistToEnd(seg, playerPos);
+      if (dist > -10) return seg; // still at or near/before this segment's end
+    }
+    // Fallback
     for (let i = this.segments.length - 1; i >= 0; i--) {
       if (this.segments[i].passed) return this.segments[i];
     }
@@ -328,6 +339,17 @@ export class TrackManager {
 
   getSpeed() { return this.speed; }
   getDistance() { return this.distance; }
+
+  // Returns positive = player is still approaching end, negative = player overshot end
+  getDistToEnd(seg, playerPos) {
+    switch (seg.direction) {
+      case 0: return playerPos.z - seg.endPos.z;  // Z- travel: positive while approaching
+      case 1: return seg.endPos.x - playerPos.x;  // X+ travel
+      case 2: return seg.endPos.z - playerPos.z;  // Z+ travel
+      case 3: return playerPos.x - seg.endPos.x;  // X- travel
+      default: return 999;
+    }
+  }
 
   reset() {
     for (const seg of this.segments) seg.dispose();

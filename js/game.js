@@ -28,6 +28,9 @@ class Game {
     // Camera smoothing
     this.camPos = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
+
+    // Buffered turn input — store the last swipe so early inputs still register
+    this.pendingTurn = null;
   }
 
   async init() {
@@ -152,55 +155,63 @@ class Game {
     });
   }
 
+  // Buffer the swipe — actual execution happens in processTurns() each frame
   handleTurn(dir) {
-    const playerPos = this.player.getPosition();
-    const currentSeg = this.track.getCurrentSegment(playerPos);
-    if (!currentSeg) return;
+    this.pendingTurn = dir;
+  }
 
-    const nextSeg = this.track.getNextSegment(currentSeg);
-    if (!nextSeg) return;
+  // Called every frame from updatePlaying — handles both buffered turns and missed-turn correction
+  processTurns(pp) {
+    const seg = this.track.getCurrentSegment(pp);
+    if (!seg) return;
 
-    // Is the next segment a turn?
-    const nextDir = nextSeg.direction;
-    const curDir = currentSeg.direction;
-    if (nextDir === curDir) return; // Next is straight, no turn needed
+    const next = this.track.getNextSegment(seg);
+    if (!next || next.direction === seg.direction) return; // Straight, nothing to do
 
-    // Allow turning in the second half of the segment (very generous)
-    // Don't require complete — just check if player is past the midpoint
-    const mid = currentSeg.startPos.clone().add(currentSeg.endPos).multiplyScalar(0.5);
-    let pastMid = false;
-    switch (curDir) {
-      case 0: pastMid = playerPos.z < mid.z; break;
-      case 1: pastMid = playerPos.x > mid.x; break;
-      case 2: pastMid = playerPos.z > mid.z; break;
-      case 3: pastMid = playerPos.x < mid.x; break;
-    }
-    if (!pastMid) return; // Too early, haven't reached turn zone
+    const distToEnd = this.track.getDistToEnd(seg, pp);
 
-    // Execute the turn regardless of left/right — just go to the next segment's direction
-    const leftDir = (curDir - 1 + 4) % 4;
-    const rightDir = (curDir + 1) % 4;
+    // Player blew past the corridor end without turning — correct immediately
+    if (distToEnd < -1 && this.player.getDirection() === seg.direction) {
+      this.lives--;
+      this.player.hit();
+      AudioManager.play('hit');
 
-    if (dir === 'left' && nextDir === leftDir) {
-      this.player.turnLeft();
-      this.snapPlayer(currentSeg);
-      AudioManager.play('laneSwitch');
-    } else if (dir === 'right' && nextDir === rightDir) {
-      this.player.turnRight();
-      this.snapPlayer(currentSeg);
-      AudioManager.play('laneSwitch');
-    } else if (nextDir === leftDir || nextDir === rightDir) {
-      // Player pressed wrong direction but there IS a turn — be forgiving, turn anyway
-      if (nextDir === leftDir) this.player.turnLeft();
+      const leftDir = (seg.direction - 1 + 4) % 4;
+      if (next.direction === leftDir) this.player.turnLeft();
       else this.player.turnRight();
-      this.snapPlayer(currentSeg);
+      this.snapToCorner(seg);
+      this.pendingTurn = null;
+
+      if (this.lives <= 0) { this.onDeath(); return; }
+      return;
+    }
+
+    // Not in the turn zone yet (more than 8 units from the end)
+    if (distToEnd > 8) return;
+
+    // In the turn zone — execute any buffered turn input
+    if (this.pendingTurn !== null) {
+      const leftDir = (seg.direction - 1 + 4) % 4;
+      const rightDir = (seg.direction + 1) % 4;
+
+      if (this.pendingTurn === 'left' && next.direction === leftDir) {
+        this.player.turnLeft();
+      } else if (this.pendingTurn === 'right' && next.direction === rightDir) {
+        this.player.turnRight();
+      } else {
+        // Wrong direction pressed but turn exists — be forgiving
+        if (next.direction === leftDir) this.player.turnLeft();
+        else this.player.turnRight();
+      }
+
+      this.snapToCorner(seg);
       AudioManager.play('laneSwitch');
+      this.pendingTurn = null;
     }
   }
 
-  snapPlayer(seg) {
+  snapToCorner(seg) {
     const pos = this.player.getPosition();
-    // Snap to the turn intersection point
     pos.x = seg.endPos.x;
     pos.z = seg.endPos.z;
   }
@@ -276,27 +287,7 @@ class Game {
     this.distance += speed * delta;
     this.score = Math.floor(this.distance) * 10;
 
-    // Check missed turn
-    const seg = this.track.getCurrentSegment(pp);
-    if (seg) {
-      const next = this.track.getNextSegment(seg);
-      if (next && seg.checkOvershot(pp) && next.direction !== seg.direction) {
-        // Player missed the turn — take damage and auto-correct
-        if (this.player.getDirection() === seg.direction) {
-          this.lives--;
-          this.player.hit();
-          AudioManager.play('hit');
-
-          // Auto-turn to survive
-          const leftDir = (seg.direction - 1 + 4) % 4;
-          if (next.direction === leftDir) this.player.turnLeft();
-          else this.player.turnRight();
-          this.snapPlayer(seg);
-
-          if (this.lives <= 0) { this.onDeath(); return; }
-        }
-      }
-    }
+    this.processTurns(pp);
 
     // Camera: behind and slightly above player, follows direction
     this.updateCamera(delta);
