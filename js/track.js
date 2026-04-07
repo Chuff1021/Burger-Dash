@@ -1,7 +1,7 @@
 // track.js — Temple Run turning corridor system with turn openings
 import * as THREE from 'three';
 
-export const ROAD_LENGTH = 40;
+export const ROAD_LENGTH = 28;
 export const ROAD_WIDTH = 4;
 const WALL_HEIGHT = 3;
 const OPENING_SIZE = 8; // larger gap in wall at turn points
@@ -114,62 +114,21 @@ function addTurnFloorGuides(group, turnInfo) {
 }
 
 function addBurgerDecor(group, turnInfo) {
+  // Lightweight: one wall sign + one neon turn arrow. No PointLights, no extra meshes.
   const signTexts = ['FRESH BURGERS', 'HOT FRIES', 'DOUBLE STACK', 'SHAKES', 'COMBO UP'];
   const signTex = makeSignTexture(signTexts[Math.floor(Math.random() * signTexts.length)]);
   const signMat = new THREE.MeshStandardMaterial({
     map: signTex,
     emissive: new THREE.Color(0xff9f1c),
     emissiveMap: signTex,
-    emissiveIntensity: 0.65,
-    roughness: 0.45,
-    metalness: 0.08
+    emissiveIntensity: 0.55,
+    roughness: 0.5,
   });
-
   const side = Math.random() < 0.5 ? -1 : 1;
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.62), signMat);
-  sign.position.set(side * (ROAD_WIDTH / 2 - 0.22), 1.8, THREE.MathUtils.randFloat(-5.5, 4.5));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.55), signMat);
+  sign.position.set(side * (ROAD_WIDTH / 2 - 0.18), 1.75, THREE.MathUtils.randFloat(-5, 4));
   sign.rotation.y = side === -1 ? Math.PI / 2 : -Math.PI / 2;
   group.add(sign);
-
-  const signGlow = new THREE.PointLight(side === -1 ? 0xff7a00 : 0xffcc55, 0.45, 5);
-  signGlow.position.copy(sign.position).add(new THREE.Vector3(side * -0.08, 0.05, 0));
-  group.add(signGlow);
-
-  const menuBoard = new THREE.Mesh(
-    new THREE.BoxGeometry(0.18, 1.1, 0.9),
-    metalMat
-  );
-  menuBoard.position.set(-side * (ROAD_WIDTH / 2 - 0.12), 1.35, THREE.MathUtils.randFloat(-6, 5));
-  group.add(menuBoard);
-
-  const menuFace = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.7, 0.9),
-    new THREE.MeshStandardMaterial({ color: 0x101828, emissive: 0x11ffee, emissiveIntensity: 0.22 })
-  );
-  menuFace.position.copy(menuBoard.position).add(new THREE.Vector3(-Math.sign(menuBoard.position.x) * 0.11, 0, 0));
-  menuFace.rotation.y = menuBoard.position.x > 0 ? Math.PI / 2 : -Math.PI / 2;
-  group.add(menuFace);
-
-  const fryer = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 0.55), metalMat);
-  fryer.position.set(side * (ROAD_WIDTH / 2 - 0.55), 0.33, THREE.MathUtils.randFloat(-3.5, 3.5));
-  group.add(fryer);
-
-  const fryGlow = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.2), neonMat);
-  fryGlow.position.copy(fryer.position).add(new THREE.Vector3(0, 0.38, 0));
-  group.add(fryGlow);
-
-  for (const trayOffset of [-0.18, 0.18]) {
-    const tray = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.04, 0.24), metalMat);
-    tray.position.set(-side * (ROAD_WIDTH / 2 - 0.58), 0.88, trayOffset + THREE.MathUtils.randFloat(-3, 3));
-    group.add(tray);
-  }
-
-  const ceilingStrip = new THREE.Mesh(
-    new THREE.BoxGeometry(ROAD_WIDTH - 0.35, 0.05, 1.2),
-    new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: 0xffd447, emissiveIntensity: 0.35, roughness: 0.35 })
-  );
-  ceilingStrip.position.set(0, WALL_HEIGHT - 0.08, THREE.MathUtils.randFloat(-4.5, 4.5));
-  group.add(ceilingStrip);
 
   if (turnInfo?.nextTurn && turnInfo.nextTurn !== 'straight') {
     const arrow = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.42), neonMat);
@@ -186,7 +145,7 @@ function createWallPiece(x, z, length) {
   );
   wall.position.set(x, WALL_HEIGHT / 2, z);
   wall.receiveShadow = true;
-  wall.castShadow = true;
+  // castShadow off on walls — they're thin and shadow contribution isn't worth the GPU cost
   return wall;
 }
 
@@ -285,81 +244,12 @@ class RoadSegment {
     const rightWallGroup = buildWall(1, rightOpenStart, rightOpenEnd);
     this.group.add(rightWallGroup);
 
-    // End-cap wall — closes the forward face of the corridor
-    const endCap = new THREE.Mesh(
-      new THREE.BoxGeometry(ROAD_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
-      wallMat
-    );
-    endCap.position.set(0, WALL_HEIGHT / 2, -ROAD_LENGTH / 2);
-    endCap.receiveShadow = true;
-    endCap.castShadow = true;
-    this.group.add(endCap);
-
-    // Ceiling — closes the top of the corridor
-    const ceilingMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(ROAD_WIDTH + WALL_THICKNESS * 2, ROAD_LENGTH),
-      wallMat
-    );
-    ceilingMesh.rotation.x = Math.PI / 2; // normal faces -Y (visible from below)
-    ceilingMesh.position.set(0, WALL_HEIGHT, 0);
-    this.group.add(ceilingMesh);
-
-    // Corner junction seals — floor fill + outer wall + back wall so there's no void
-    // at the L-shaped corner where two corridors meet.
-    // In local space the road end is at z=-ROAD_LENGTH/2. For a RIGHT turn, the gap
-    // is on the LEFT side (sideSign=-1); for LEFT turn, gap is on the RIGHT (sideSign=+1).
-    if (turnInfo?.nextTurn && turnInfo.nextTurn !== 'straight') {
-      const sideSign = turnInfo.nextTurn === 'right' ? -1 : 1;
-      const hw = ROAD_WIDTH / 2;   // = 2
-      const qw = ROAD_WIDTH / 4;   // = 1
-      const el = ROAD_LENGTH / 2;  // end local z
-
-      // Floor fill in the corner pocket
-      const cf = new THREE.Mesh(
-        new THREE.PlaneGeometry(hw + 0.25, hw + 0.25),
-        roadMat
-      );
-      cf.rotation.x = -Math.PI / 2;
-      cf.position.set(sideSign * qw, 0.001, -el - qw);
-      this.group.add(cf);
-
-      // Outer side wall extension (extends the outer wall past the end cap)
-      const owx = new THREE.Mesh(
-        new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, hw + WALL_THICKNESS * 2),
-        wallMat
-      );
-      owx.position.set(sideSign * (hw + WALL_THICKNESS / 2), WALL_HEIGHT / 2, -el - qw);
-      this.group.add(owx);
-
-      // Back wall of the corner pocket (closes the far end)
-      const bw = new THREE.Mesh(
-        new THREE.BoxGeometry(hw + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
-        wallMat
-      );
-      bw.position.set(sideSign * qw, WALL_HEIGHT / 2, -el - hw);
-      this.group.add(bw);
-
-      // Ceiling over the corner pocket
-      const cc = new THREE.Mesh(
-        new THREE.PlaneGeometry(hw + 0.25, hw + 0.25),
-        wallMat
-      );
-      cc.rotation.x = Math.PI / 2;
-      cc.position.set(sideSign * qw, WALL_HEIGHT, -el - qw);
-      this.group.add(cc);
-    }
-
-    // One ceiling beam
+    // One overhead beam — visual anchor, no PointLight (kills performance)
     const beamGeo = new THREE.BoxGeometry(ROAD_WIDTH + 0.6, 0.15, 0.25);
     const beamMat = new THREE.MeshStandardMaterial({ color: 0x554433, roughness: 0.7 });
     const beam = new THREE.Mesh(beamGeo, beamMat);
     beam.position.set(0, WALL_HEIGHT, 0);
     this.group.add(beam);
-
-    // One warm light
-    const light = new THREE.PointLight(0xFF8C00, 0.5, 15);
-    light.position.set(0, 2.5, 0);
-    this.group.add(light);
 
     // Burger-joint decor pass
     addTurnFloorGuides(this.group, turnInfo);

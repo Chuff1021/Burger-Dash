@@ -123,17 +123,17 @@ export class ObstacleManager {
     if (Math.random() > chance) return;
 
     const lanes = [-0.95, 0, 0.95];
-    // First obstacle: placed in the early-middle of the segment
+    // First obstacle: placed in the first half of the segment
     const kind1 = Math.random() < (speedT > 0.45 ? 0.48 : 0.62) ? 'jump' : 'slide';
-    const along1 = THREE.MathUtils.lerp(0.28, 0.48, Math.random()) * ROAD_LENGTH;
+    const along1 = THREE.MathUtils.lerp(0.35, 0.52, Math.random()) * ROAD_LENGTH;
     const lane1 = lanes[Math.floor(Math.random() * 3)];
     this.spawnOne(segment, along1, lane1, kind1);
 
-    // Second obstacle at higher difficulty: different lane and kind, placed further down
-    if (difficulty > 0.35 && Math.random() < difficulty * 0.75) {
-      const kind2 = kind1 === 'jump' ? 'slide' : 'jump'; // alternate kind for variety
-      const along2 = THREE.MathUtils.lerp(0.58, 0.75, Math.random()) * ROAD_LENGTH;
-      // Pick a different lane from the first
+    // Second obstacle at higher difficulty: different kind and lane, placed further down
+    // Keep it at least 5 units from the end to avoid clipping the turn zone
+    if (difficulty > 0.35 && Math.random() < difficulty * 0.70) {
+      const kind2 = kind1 === 'jump' ? 'slide' : 'jump';
+      const along2 = THREE.MathUtils.lerp(0.60, 0.72, Math.random()) * ROAD_LENGTH;
       const otherLanes = lanes.filter(l => l !== lane1);
       const lane2 = otherLanes[Math.floor(Math.random() * otherLanes.length)];
       this.spawnOne(segment, along2, lane2, kind2);

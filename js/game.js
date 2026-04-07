@@ -1,8 +1,5 @@
 // game.js — Temple Run style endless runner
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { Player } from './player.js';
 import { TrackManager, DIR_VECTORS } from './track.js';
 import { AudioManager } from './audio.js';
@@ -89,15 +86,10 @@ class Game {
     this.playerLight = new THREE.PointLight(0xFF8C00, 0.6, 10);
     this.scene.add(this.playerLight);
 
-    // Post-processing (bloom only — keep it light for perf)
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    const bloom = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.3, 0.4, 0.8
-    );
-    this.composer.addPass(bloom);
-    this.bloomPass = bloom;
+    // No post-processing — direct render for maximum mobile performance.
+    // Bloom was adding 2 full-screen GPU passes per frame which kills 60fps.
+    this.composer = null;
+    this.bloomPass = null;
 
     // Subsystems
     this.track = new TrackManager(this.scene);
@@ -344,7 +336,7 @@ class Game {
 
     if (this.state === State.PLAYING) this.updatePlaying(delta);
 
-    this.composer.render();
+    this.renderer.render(this.scene, this.camera);
   }
 
   updatePlaying(delta) {
@@ -519,8 +511,6 @@ class Game {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    this.composer.setSize(w, h);
-    if (this.bloomPass) this.bloomPass.resolution.set(w, h);
   }
 }
 
