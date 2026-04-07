@@ -7,6 +7,10 @@ import { Player } from './player.js';
 import { TrackManager, DIR_VECTORS } from './track.js';
 import { AudioManager } from './audio.js';
 import { SaveManager } from './save.js';
+import { EffectsManager } from './effects.js';
+import { ObstacleManager } from './obstacles.js';
+import { CollectibleManager } from './collectibles.js';
+import { ChaserManager } from './chaser.js';
 
 const State = { LOADING: 0, TITLE: 1, PLAYING: 2, PAUSED: 3, GAME_OVER: 4 };
 
@@ -19,6 +23,11 @@ class Game {
     this.lives = 3;
     this.lastTime = 0;
     this.audioInitialized = false;
+    this.lastCheckpoint = 0;
+    this.lastGrounded = true;
+    this.cameraTurnBlend = 1;
+    this.cameraFromDir = 0;
+    this.cameraToDir = 0;
 
     // Input
     this.touchStartX = 0;
@@ -28,8 +37,9 @@ class Game {
     // Camera smoothing
     this.camPos = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
+    this.lastObstacleHits = 0;
 
-    // Buffered turn input — store the last swipe so early inputs still register
+    // Buffered swipe: store last horizontal input so early swipes still register at the corner
     this.pendingTurn = null;
   }
 
@@ -92,6 +102,12 @@ class Game {
     // Subsystems
     this.track = new TrackManager(this.scene);
     this.player = new Player();
+    this.effects = new EffectsManager();
+    this.effects.init(this.scene, this.camera);
+    this.obstacles = new ObstacleManager();
+    this.collectibles = new CollectibleManager();
+    this.chaser = new ChaserManager();
+    this.chaser.init(this.scene);
 
     // Input
     this.wireInput(canvas);
@@ -133,8 +149,8 @@ class Game {
 
       if (ax > ay) {
         // Horizontal = TURN
-        if (dx > 0) this.handleTurn('right');
-        else this.handleTurn('left');
+        if (dx > 0) this.handleHorizontal('right');
+        else this.handleHorizontal('left');
       } else {
         // Vertical = jump/slide
         if (dy < 0) { this.player.jump(); AudioManager.play('jump'); }
@@ -146,8 +162,8 @@ class Game {
     window.addEventListener('keydown', e => {
       if (this.state !== State.PLAYING) return;
       switch (e.key) {
-        case 'ArrowLeft': case 'a': this.handleTurn('left'); break;
-        case 'ArrowRight': case 'd': this.handleTurn('right'); break;
+        case 'ArrowLeft': case 'a': this.handleHorizontal('left'); break;
+        case 'ArrowRight': case 'd': this.handleHorizontal('right'); break;
         case 'ArrowUp': case 'w': case ' ': this.player.jump(); AudioManager.play('jump'); break;
         case 'ArrowDown': case 's': this.player.slide(); AudioManager.play('slide'); break;
         case 'Escape': this.pause(); break;
@@ -155,65 +171,106 @@ class Game {
     });
   }
 
-  // Buffer the swipe — actual execution happens in processTurns() each frame
-  handleTurn(dir) {
-    this.pendingTurn = dir;
+  handleHorizontal(dir) {
+    const playerPos = this.player.getPosition();
+    const currentSeg = this.track.getCurrentSegment(playerPos);
+    if (!currentSeg) return;
+
+    const nextSeg = this.track.getNextSegment(currentSeg);
+    const nextDir = nextSeg?.direction;
+    const curDir = currentSeg.direction;
+    const turnAvailable = nextSeg && nextDir !== curDir;
+    const distToEnd = turnAvailable ? this.track.getDistToEnd(currentSeg, playerPos) : 999;
+    const inTurnZone = turnAvailable && distToEnd <= 8;
+
+    if (inTurnZone) {
+      // Execute turn immediately
+      this.executeTurn(currentSeg, nextSeg, dir);
+      return;
+    }
+
+    if (turnAvailable) {
+      // Too early for the corner — buffer the input, it will fire when player enters the zone
+      this.pendingTurn = dir;
+      return;
+    }
+
+    // Straight segment — lane switch
+    const laneMoved = this.player.moveLane(dir === 'left' ? -1 : 1);
+    if (laneMoved) AudioManager.play('laneSwitch');
   }
 
-  // Called every frame from updatePlaying — handles both buffered turns and missed-turn correction
+  executeTurn(currentSeg, nextSeg, dir) {
+    const curDir = currentSeg.direction;
+    const nextDir = nextSeg.direction;
+    const leftDir = (curDir - 1 + 4) % 4;
+    const rightDir = (curDir + 1) % 4;
+
+    // Accept correct direction; if wrong direction was pressed, be forgiving and turn anyway
+    if (dir === 'left' && nextDir === leftDir) {
+      this.player.turnLeft();
+    } else if (dir === 'right' && nextDir === rightDir) {
+      this.player.turnRight();
+    } else {
+      // Forgiving turn — wrong direction pressed but there IS a corner here
+      if (nextDir === leftDir) this.player.turnLeft();
+      else this.player.turnRight();
+    }
+
+    this.beginCameraTurn(curDir, nextDir);
+    this.snapPlayer(currentSeg, nextDir);
+    AudioManager.play('laneSwitch');
+    this.pendingTurn = null;
+  }
+
+  // Called every frame — fires buffered turn when player enters zone, corrects if they overshoot
   processTurns(pp) {
     const seg = this.track.getCurrentSegment(pp);
     if (!seg) return;
 
     const next = this.track.getNextSegment(seg);
-    if (!next || next.direction === seg.direction) return; // Straight, nothing to do
+    if (!next || next.direction === seg.direction) {
+      this.pendingTurn = null; // on a straight, clear stale buffer
+      return;
+    }
 
     const distToEnd = this.track.getDistToEnd(seg, pp);
 
-    // Player blew past the corridor end without turning — correct immediately
+    // Player blew past the corridor end — auto-correct immediately (no more flying off map)
     if (distToEnd < -1 && this.player.getDirection() === seg.direction) {
       this.lives--;
       this.player.hit();
       AudioManager.play('hit');
-
-      const leftDir = (seg.direction - 1 + 4) % 4;
-      if (next.direction === leftDir) this.player.turnLeft();
-      else this.player.turnRight();
-      this.snapToCorner(seg);
-      this.pendingTurn = null;
-
+      this.executeTurn(seg, next, 'right'); // direction doesn't matter; executeTurn is forgiving
       if (this.lives <= 0) { this.onDeath(); return; }
       return;
     }
 
-    // Not in the turn zone yet (more than 8 units from the end)
+    // Not in zone yet
     if (distToEnd > 8) return;
 
-    // In the turn zone — execute any buffered turn input
+    // In the 8-unit turn zone — fire any buffered swipe
     if (this.pendingTurn !== null) {
-      const leftDir = (seg.direction - 1 + 4) % 4;
-      const rightDir = (seg.direction + 1) % 4;
-
-      if (this.pendingTurn === 'left' && next.direction === leftDir) {
-        this.player.turnLeft();
-      } else if (this.pendingTurn === 'right' && next.direction === rightDir) {
-        this.player.turnRight();
-      } else {
-        // Wrong direction pressed but turn exists — be forgiving
-        if (next.direction === leftDir) this.player.turnLeft();
-        else this.player.turnRight();
-      }
-
-      this.snapToCorner(seg);
-      AudioManager.play('laneSwitch');
-      this.pendingTurn = null;
+      this.executeTurn(seg, next, this.pendingTurn);
     }
   }
 
-  snapToCorner(seg) {
+  snapPlayer(seg, nextDir = null) {
     const pos = this.player.getPosition();
+    // Snap to the turn intersection point, then bias slightly into the next corridor
     pos.x = seg.endPos.x;
     pos.z = seg.endPos.z;
+    if (nextDir !== null) {
+      const forward = DIR_VECTORS[nextDir].clone().multiplyScalar(1.4);
+      pos.x += forward.x;
+      pos.z += forward.z;
+    }
+  }
+
+  beginCameraTurn(fromDir, toDir) {
+    this.cameraFromDir = fromDir;
+    this.cameraToDir = toDir;
+    this.cameraTurnBlend = 0;
   }
 
   wireUI() {
@@ -239,7 +296,19 @@ class Game {
 
     this.track.reset();
     this.track.init();
-    await this.player.init(this.scene);
+    await Promise.all([
+      this.player.init(this.scene),
+      this.obstacles.init(this.scene),
+      this.collectibles.init(this.scene)
+    ]);
+    this.obstacles.reset();
+    this.collectibles.reset();
+    this.chaser.reset();
+    this.lastCheckpoint = 0;
+    this.lastObstacleHits = 0;
+    this.cameraTurnBlend = 1;
+    this.cameraFromDir = this.player.getDirection();
+    this.cameraToDir = this.player.getDirection();
 
     // Initialize camera position behind player
     const pp = this.player.getPosition();
@@ -248,6 +317,7 @@ class Game {
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
 
+    this.lastGrounded = true;
     this.state = State.PLAYING;
     this.showScreen('hud');
     AudioManager.playBGM();
@@ -284,46 +354,110 @@ class Game {
     this.track.update(delta, pp);
     this.player.update(delta, speed);
 
+    const nextPlayerPos = this.player.getPosition();
     this.distance += speed * delta;
-    this.score = Math.floor(this.distance) * 10;
+    this.score = Math.floor(this.distance) * 10 + this.coins * 25;
 
-    this.processTurns(pp);
+    const landedThisFrame = !this.lastGrounded && this.player.isGrounded;
+    if (landedThisFrame) {
+      this.effects.emitCoins(nextPlayerPos.clone().add(new THREE.Vector3(0, 0.05, 0)));
+    }
+    this.lastGrounded = this.player.isGrounded;
+
+    const collectedCoins = this.collectibles.update(delta, this.track, this.player, this.effects);
+    if (collectedCoins > 0) {
+      this.coins += collectedCoins;
+      this.chaser.onCoinCollect(collectedCoins);
+      AudioManager.play('coinCollect');
+    }
+
+    const obstacleHits = this.obstacles.update(delta, this.track, this.player, this.effects);
+    if (obstacleHits > 0) {
+      this.lives = Math.max(0, this.lives - obstacleHits);
+      this.chaser.onPlayerHit();
+      if (this.player.hit()) {
+        AudioManager.play('hit');
+      }
+      if (this.lives <= 0) { this.onDeath(); return; }
+    }
+
+    const checkpoint = Math.floor(this.distance / 500) * 500;
+    if (checkpoint > 0 && checkpoint !== this.lastCheckpoint) {
+      this.lastCheckpoint = checkpoint;
+      this.chaser.onCheckpoint();
+      this.effects.emitCheckpoint(nextPlayerPos.clone());
+      this.effects.showCheckpoint(checkpoint);
+      AudioManager.play('checkpoint');
+    }
+
+    // Process turn: fire buffered inputs in the zone, auto-correct if player blows past end
+    this.processTurns(nextPlayerPos);
+
+    this.chaser.onGoodRun(delta, this.track.getSpeed());
+    const chaseState = this.chaser.update(delta, this.player, this.track.getSpeed());
+    if (chaseState.caught) {
+      this.lives = 0;
+      this.onDeath();
+      return;
+    }
 
     // Camera: behind and slightly above player, follows direction
     this.updateCamera(delta);
 
     // Move lights
-    this.dirLight.position.set(pp.x + 2, pp.y + 6, pp.z + 3);
-    this.dirLight.target.position.copy(pp);
-    this.playerLight.position.set(pp.x, pp.y + 1.5, pp.z);
+    this.dirLight.position.set(nextPlayerPos.x + 2, nextPlayerPos.y + 6, nextPlayerPos.z + 3);
+    this.dirLight.target.position.copy(nextPlayerPos);
+    this.playerLight.position.set(nextPlayerPos.x, nextPlayerPos.y + 1.5, nextPlayerPos.z);
+
+    this.effects.setSpeedLines(this.track.getSpeed(), this.track.maxSpeed);
+    this.effects.updateAura(delta, nextPlayerPos);
+    this.effects.update(delta);
 
     this.updateHUD();
   }
 
   updateCamera(delta) {
     const pos = this.player.getPosition();
-    const dir = this.player.getDirection();
+    const activeDir = this.player.getDirection();
 
-    // Camera behind player: 4 units back, 2.2 units up
-    const behind = DIR_VECTORS[dir].clone().multiplyScalar(-4);
+    if (this.cameraTurnBlend < 1) {
+      this.cameraTurnBlend = Math.min(1, this.cameraTurnBlend + delta * 3.4);
+      if (this.cameraTurnBlend >= 1) {
+        this.cameraFromDir = activeDir;
+        this.cameraToDir = activeDir;
+      }
+    } else {
+      this.cameraFromDir = activeDir;
+      this.cameraToDir = activeDir;
+    }
+
+    const blend = THREE.MathUtils.smoothstep(this.cameraTurnBlend, 0, 1);
+    const fromBehind = DIR_VECTORS[this.cameraFromDir].clone().multiplyScalar(-4.6);
+    const toBehind = DIR_VECTORS[this.cameraToDir].clone().multiplyScalar(-4.1);
+    const behind = fromBehind.lerp(toBehind, blend);
+
+    const fromAhead = DIR_VECTORS[this.cameraFromDir].clone().multiplyScalar(3.4);
+    const toAhead = DIR_VECTORS[this.cameraToDir].clone().multiplyScalar(4.2);
+    const ahead = fromAhead.lerp(toAhead, blend);
+
+    const bankOffset = DIR_VECTORS[(activeDir + 1) % 4].clone().multiplyScalar(this.player.turnLean * 0.9);
+
     const targetPos = new THREE.Vector3(
-      pos.x + behind.x,
-      pos.y + 2.2,
-      pos.z + behind.z
+      pos.x + behind.x + bankOffset.x,
+      pos.y + 2.25 + Math.abs(this.player.turnLean) * 0.18,
+      pos.z + behind.z + bankOffset.z
     );
 
-    // Look ahead: 3 units forward, 1 unit up
-    const ahead = DIR_VECTORS[dir].clone().multiplyScalar(3);
     const targetLook = new THREE.Vector3(
       pos.x + ahead.x,
-      pos.y + 1,
+      pos.y + 1.05,
       pos.z + ahead.z
     );
 
-    // Smooth interpolation (fast enough to feel responsive)
-    const lerpSpeed = delta * 10;
-    this.camPos.lerp(targetPos, Math.min(lerpSpeed, 1));
-    this.camLook.lerp(targetLook, Math.min(lerpSpeed, 1));
+    const followSharpness = this.cameraTurnBlend < 1 ? 7.5 : 10.5;
+    const lerpSpeed = Math.min(delta * followSharpness, 1);
+    this.camPos.lerp(targetPos, lerpSpeed);
+    this.camLook.lerp(targetLook, Math.min(delta * (followSharpness + 1.5), 1));
 
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
@@ -356,6 +490,18 @@ class Game {
     document.getElementById('hud-score').textContent = this.score.toLocaleString();
     document.getElementById('hud-distance').textContent = Math.floor(this.distance) + 'm';
     document.getElementById('hud-coin-count').textContent = this.coins;
+    const chaserInfo = document.getElementById('hud-powerup-icon');
+    if (chaserInfo) {
+      const pressure = THREE.MathUtils.clamp(1 - ((this.chaser.distance - this.chaser.catchDistance) / (this.chaser.maxDistance - this.chaser.catchDistance)), 0, 1);
+      chaserInfo.textContent = pressure > 0.7 ? 'BEAST CLOSE' : pressure > 0.4 ? 'BEAST NEAR' : 'BEAST BACK';
+      chaserInfo.parentElement?.classList.remove('hidden');
+    }
+    const arc = document.getElementById('hud-powerup-arc');
+    if (arc) {
+      const pressure = THREE.MathUtils.clamp(1 - ((this.chaser.distance - this.chaser.catchDistance) / (this.chaser.maxDistance - this.chaser.catchDistance)), 0, 1);
+      arc.setAttribute('stroke', pressure > 0.68 ? '#FF5A36' : pressure > 0.38 ? '#FFD447' : '#4DFF88');
+      arc.setAttribute('stroke-dashoffset', String(113 - pressure * 113));
+    }
     const el = document.getElementById('hud-lives');
     let h = '';
     for (let i = 0; i < 3; i++) h += `<span class="life-icon${i >= this.lives ? ' lost' : ''}">&#10084;</span>`;

@@ -7,8 +7,9 @@ const GRAVITY = -25;
 const JUMP_FORCE = 10;
 const SLIDE_DURATION = 700;
 const INVINCIBILITY_DURATION = 2000;
-const STRAFE_SPEED = 6;
-const STRAFE_LIMIT = ROAD_WIDTH / 2 - 0.4;
+const STRAFE_SPEED = 10;
+const STRAFE_LIMIT = ROAD_WIDTH / 2 - 0.7;
+const LANE_OFFSET = 0.95;
 
 export class Player {
   constructor() {
@@ -22,7 +23,7 @@ export class Player {
     // Direction and movement
     this.direction = 0; // 0-3 cardinal (same as track)
     this.velocityY = 0;
-    this.isGrounded = true;
+    this.grounded = true;
     this.state = 'running'; // running, jumping, sliding, hit, dead
 
     // Timers
@@ -32,6 +33,15 @@ export class Player {
 
     // Collision
     this.collisionBox = new THREE.Box3();
+
+    // Turn feel
+    this.visualTurn = 0;
+    this.turnLean = 0;
+    this.turnMomentum = 0;
+
+    // Corridor lane movement
+    this.lane = 0;
+    this.lateralOffset = 0;
   }
 
   async init(scene) {
@@ -153,11 +163,16 @@ export class Player {
   reset() {
     this.direction = 0;
     this.velocityY = 0;
-    this.isGrounded = true;
+    this.grounded = true;
     this.state = 'running';
     this.slideTimer = 0;
     this.invincibleTimer = 0;
     this.time = 0;
+    this.visualTurn = this.direction;
+    this.turnLean = 0;
+    this.turnMomentum = 0;
+    this.lane = 0;
+    this.lateralOffset = 0;
 
     if (this.model) {
       this.model.position.set(0, 0, -2);
@@ -183,17 +198,27 @@ export class Player {
     // Auto-run forward in current direction
     const moveAmount = speed * delta;
     const dirVec = DIR_VECTORS[this.direction];
+    const perpDir = DIR_VECTORS[(this.direction + 1) % 4];
+
+    this.model.position.x -= perpDir.x * this.lateralOffset;
+    this.model.position.z -= perpDir.z * this.lateralOffset;
     this.model.position.x += dirVec.x * moveAmount;
     this.model.position.z += dirVec.z * moveAmount;
 
+    const targetOffset = this.lane * LANE_OFFSET;
+    this.lateralOffset = THREE.MathUtils.lerp(this.lateralOffset, targetOffset, Math.min(delta * STRAFE_SPEED, 1));
+    this.lateralOffset = THREE.MathUtils.clamp(this.lateralOffset, -STRAFE_LIMIT, STRAFE_LIMIT);
+    this.model.position.x += perpDir.x * this.lateralOffset;
+    this.model.position.z += perpDir.z * this.lateralOffset;
+
     // Jump physics
-    if (!this.isGrounded) {
+    if (!this.grounded) {
       this.velocityY += GRAVITY * delta;
       this.model.position.y += this.velocityY * delta;
       if (this.model.position.y <= 0) {
         this.model.position.y = 0;
         this.velocityY = 0;
-        this.isGrounded = true;
+        this.grounded = true;
         if (this.state === 'jumping') {
           this.state = 'running';
           this.switchAnimation('run');
@@ -225,9 +250,15 @@ export class Player {
       }
     }
 
-    // Player rotation to face current direction
+    // Player rotation / lean for smoother turns
     const targetRotY = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][this.direction];
-    this.model.rotation.y = THREE.MathUtils.lerp(this.model.rotation.y, targetRotY, delta * 15);
+    const current = this.model.rotation.y;
+    const deltaRot = Math.atan2(Math.sin(targetRotY - current), Math.cos(targetRotY - current));
+    this.model.rotation.y = current + deltaRot * Math.min(delta * 11, 1);
+    const targetLean = THREE.MathUtils.clamp(-deltaRot * 0.6, -0.32, 0.32);
+    this.turnMomentum = THREE.MathUtils.lerp(this.turnMomentum, deltaRot, Math.min(delta * 8, 1));
+    this.turnLean = THREE.MathUtils.lerp(this.turnLean, targetLean, Math.min(delta * 10, 1));
+    this.model.rotation.z = this.turnLean;
 
     // Update collision box
     const pos = this.model.position;
@@ -250,23 +281,22 @@ export class Player {
     this.direction = (this.direction + 1) % 4;
   }
 
-  // Strafe within the corridor (tilt-like movement)
-  strafe(amount, delta) {
-    if (this.state === 'dead') return;
-    // Move perpendicular to current direction
-    const perpDir = DIR_VECTORS[(this.direction + 1) % 4];
-    this.model.position.x += perpDir.x * amount * STRAFE_SPEED * delta;
-    this.model.position.z += perpDir.z * amount * STRAFE_SPEED * delta;
+  moveLane(dir) {
+    if (this.state === 'dead') return false;
+    const nextLane = THREE.MathUtils.clamp(this.lane + dir, -1, 1);
+    if (nextLane === this.lane) return false;
+    this.lane = nextLane;
+    return true;
   }
 
   jump() {
-    if (this.state === 'dead' || this.state === 'hit' || !this.isGrounded) return;
+    if (this.state === 'dead' || this.state === 'hit' || !this.grounded) return;
     if (this.state === 'sliding') {
       this.model.scale.setScalar(this.modelScale);
     }
     this.state = 'jumping';
     this.velocityY = JUMP_FORCE;
-    this.isGrounded = false;
+    this.grounded = false;
     this.switchAnimation('jump');
   }
 
@@ -274,6 +304,9 @@ export class Player {
     if (this.state === 'dead' || this.state === 'hit' || this.state === 'jumping') return;
     this.state = 'sliding';
     this.slideTimer = SLIDE_DURATION;
+    if (this.model && this.modelScale) {
+      this.model.scale.set(this.modelScale, this.modelScale * 0.72, this.modelScale);
+    }
     this.switchAnimation('roll');
   }
 
@@ -299,6 +332,8 @@ export class Player {
   getPosition() { return this.model ? this.model.position : new THREE.Vector3(); }
   getDirection() { return this.direction; }
   getState() { return this.state; }
+  getLane() { return this.lane; }
   getCollisionBox() { return this.collisionBox; }
+  get isGrounded() { return this.grounded; }
   isInvincible() { return this.invincibleTimer > 0 || this.state === 'hit'; }
 }
