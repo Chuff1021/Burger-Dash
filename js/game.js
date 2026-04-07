@@ -275,6 +275,12 @@ class Game {
     document.getElementById('hud-pause').onclick = e => { e.stopPropagation(); this.pause(); };
     document.getElementById('btn-settings-open').onclick = () => this.showScreen('settings');
     document.getElementById('btn-settings-back').onclick = () => this.showScreen('title');
+
+    // Wire volume sliders
+    const musicSlider = document.getElementById('setting-music');
+    const sfxSlider = document.getElementById('setting-sfx');
+    if (musicSlider) musicSlider.oninput = () => AudioManager.setMusicVolume?.(musicSlider.value / 100);
+    if (sfxSlider) sfxSlider.oninput = () => AudioManager.setSFXVolume?.(sfxSlider.value / 100);
   }
 
   initAudio() {
@@ -352,7 +358,8 @@ class Game {
 
     const landedThisFrame = !this.lastGrounded && this.player.isGrounded;
     if (landedThisFrame) {
-      this.effects.emitCoins(nextPlayerPos.clone().add(new THREE.Vector3(0, 0.05, 0)));
+      // Use hit-spark particles for landing dust, not gold coin particles
+      this.effects.emitHit(nextPlayerPos.clone().add(new THREE.Vector3(0, 0.05, 0)));
     }
     this.lastGrounded = this.player.isGrounded;
 
@@ -458,6 +465,7 @@ class Game {
   onDeath() {
     this.state = State.GAME_OVER;
     this.player.die();
+    this.effects.emitDeath?.(this.player.getPosition().clone());
     AudioManager.play('gameOver');
     AudioManager.stopBGM();
 

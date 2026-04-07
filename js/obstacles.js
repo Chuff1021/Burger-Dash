@@ -170,9 +170,18 @@ export class ObstacleManager {
         new THREE.Vector3(laneWidth, boxHeight, 0.8)
       );
 
-      const safeJump = kind === 'jump' && player.getState() === 'jumping' && playerPos.y > 0.9;
+      // Any jump clears a hurdle — removing the y-threshold stops phantom hits mid-jump
+      const safeJump = kind === 'jump' && player.getState() === 'jumping';
       const safeSlide = kind === 'slide' && player.getState() === 'sliding';
-      const sameLane = Math.abs(playerPos.x - mesh.position.x) < 0.72 && Math.abs(playerPos.z - mesh.position.z) < 1.0;
+
+      // sameLane must use the correct lateral axis for the segment direction.
+      // For Z-axis travel (dir 0/2) lanes differ in X; for X-axis travel (dir 1/3) lanes differ in Z.
+      // The original code always checked X-diff for lateral, which caused obstacles in a different
+      // lane to register as same-lane when the player was running in the X direction.
+      const isZTravel = segment.direction === 0 || segment.direction === 2;
+      const sameLane = isZTravel
+        ? Math.abs(playerPos.x - mesh.position.x) < 0.72 && Math.abs(playerPos.z - mesh.position.z) < 1.2
+        : Math.abs(playerPos.z - mesh.position.z) < 0.72 && Math.abs(playerPos.x - mesh.position.x) < 1.2;
 
       if (!obstacle.hit && !player.isInvincible() && sameLane && this.tempBox.intersectsBox(playerBox)) {
         if (!safeJump && !safeSlide) {

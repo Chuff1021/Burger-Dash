@@ -136,7 +136,7 @@ class AudioManagerClass {
 
   createBGM() {
     // Simple procedural BGM - a funky bass + melody loop
-    const sampleRate = 44100;
+    const sampleRate = this.audioCtx.sampleRate; // was hardcoded 44100 — wrong on iOS (48kHz) causing flat/slow pitch
     const bpm = 140;
     const beatsPerLoop = 16;
     const beatDuration = 60 / bpm;

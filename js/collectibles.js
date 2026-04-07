@@ -135,7 +135,8 @@ export class CollectibleManager {
         mesh,
         segment,
         collected: false,
-        phase: Math.random() * Math.PI * 2
+        phase: Math.random() * Math.PI * 2,
+        baseY: position.y  // store spawn Y so bob is computed, not accumulated
       });
     }
   }
@@ -156,7 +157,8 @@ export class CollectibleManager {
       const { mesh, segment } = coin;
 
       mesh.rotation.y += delta * 8;
-      mesh.position.y += Math.sin(performance.now() * 0.006 + coin.phase) * 0.0035;
+      // Compute bob from base so position never drifts (was using += which accumulated)
+      mesh.position.y = coin.baseY + Math.sin(performance.now() * 0.006 + coin.phase) * 0.12;
 
       this.tempBox.setFromCenterAndSize(
         this.tempVec.set(mesh.position.x, mesh.position.y, mesh.position.z),

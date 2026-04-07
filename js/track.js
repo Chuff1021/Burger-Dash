@@ -435,7 +435,17 @@ export class TrackManager {
       while (this.segments.length < segCount + 5) this.spawnNextPlanned();
     }
 
-    // Cleanup old — keep at most 8 segments; longer corridors need fewer queued
+    // Force-complete any segment that the player is more than one full segment behind
+    // (can happen when the auto-correct snap skips checkComplete). Without this the
+    // cleanup loop stalls and the scene accumulates stale geometry indefinitely.
+    for (const seg of this.segments) {
+      if (seg.passed && !seg.complete) {
+        const dist = this.getDistToEnd(seg, playerPos);
+        if (dist < -(ROAD_LENGTH * 0.5)) seg.complete = true;
+      }
+    }
+
+    // Cleanup old — keep at most 8 segments
     while (this.segments.length > 8) {
       const old = this.segments[0];
       if (old.passed && old.complete) {

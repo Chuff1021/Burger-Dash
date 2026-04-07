@@ -9,7 +9,7 @@ class ParticleSystem {
 
     const geo = new THREE.PlaneGeometry(0.15, 0.15);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
+      vertexColors: true,  // required for instanceColor to work — without this all particles render white
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide

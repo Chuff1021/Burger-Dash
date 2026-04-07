@@ -42,6 +42,7 @@ export class Player {
     // Corridor lane movement
     this.lane = 0;
     this.lateralOffset = 0;
+    this._lastDirection = 0; // used to detect turn so we can reset lateral state
   }
 
   async init(scene) {
@@ -173,6 +174,7 @@ export class Player {
     this.turnMomentum = 0;
     this.lane = 0;
     this.lateralOffset = 0;
+    this._lastDirection = 0;
 
     if (this.model) {
       this.model.position.set(0, 0, -2);
@@ -199,6 +201,15 @@ export class Player {
     const moveAmount = speed * delta;
     const dirVec = DIR_VECTORS[this.direction];
     const perpDir = DIR_VECTORS[(this.direction + 1) % 4];
+
+    // On the frame a turn happens, perpDir has changed. If we tried to subtract
+    // the old lateralOffset in the new perpDir we'd yank the player sideways into
+    // a wall. Reset lane and offset so the transition is clean.
+    if (this._lastDirection !== this.direction) {
+      this.lateralOffset = 0;
+      this.lane = 0;
+      this._lastDirection = this.direction;
+    }
 
     this.model.position.x -= perpDir.x * this.lateralOffset;
     this.model.position.z -= perpDir.z * this.lateralOffset;
