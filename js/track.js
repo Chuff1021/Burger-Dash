@@ -285,6 +285,17 @@ class RoadSegment {
     const rightWallGroup = buildWall(1, rightOpenStart, rightOpenEnd);
     this.group.add(rightWallGroup);
 
+    // End-cap wall — closes the forward face of the corridor so there's no hole
+    // at the far end. The player exits through the side-wall opening, not this wall.
+    const endCap = new THREE.Mesh(
+      new THREE.BoxGeometry(ROAD_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
+      wallMat
+    );
+    endCap.position.set(0, WALL_HEIGHT / 2, -ROAD_LENGTH / 2);
+    endCap.receiveShadow = true;
+    endCap.castShadow = true;
+    this.group.add(endCap);
+
     // One ceiling beam
     const beamGeo = new THREE.BoxGeometry(ROAD_WIDTH + 0.6, 0.15, 0.25);
     const beamMat = new THREE.MeshStandardMaterial({ color: 0x554433, roughness: 0.7 });
@@ -321,21 +332,27 @@ class RoadSegment {
   }
 
   checkPassed(p) {
+    // Use a perpendicular corridor check to prevent cross-axis false positives.
+    // Without this, a dir=1 segment fires when p.x > startPos.x even while player
+    // is still running dir=0 (e.g. from lane-switching x-offset) — causing the
+    // update loop to spawn segments exponentially and freeze.
+    const pw = ROAD_WIDTH; // generous lateral tolerance
     switch (this.direction) {
-      case 0: return p.z < this.startPos.z;
-      case 1: return p.x > this.startPos.x;
-      case 2: return p.z > this.startPos.z;
-      case 3: return p.x < this.startPos.x;
+      case 0: return p.z < this.startPos.z && Math.abs(p.x - this.startPos.x) < pw;
+      case 1: return p.x > this.startPos.x && Math.abs(p.z - this.startPos.z) < pw;
+      case 2: return p.z > this.startPos.z && Math.abs(p.x - this.startPos.x) < pw;
+      case 3: return p.x < this.startPos.x && Math.abs(p.z - this.startPos.z) < pw;
     }
   }
 
   checkComplete(p) {
     const m = 6; // mark complete when within 6 units of end
+    const pw = ROAD_WIDTH;
     switch (this.direction) {
-      case 0: return p.z < this.endPos.z + m;
-      case 1: return p.x > this.endPos.x - m;
-      case 2: return p.z > this.endPos.z - m;
-      case 3: return p.x < this.endPos.x + m; // was - m (bug: was marking 6 past end, not 6 before)
+      case 0: return p.z < this.endPos.z + m && Math.abs(p.x - this.startPos.x) < pw;
+      case 1: return p.x > this.endPos.x - m && Math.abs(p.z - this.startPos.z) < pw;
+      case 2: return p.z > this.endPos.z - m && Math.abs(p.x - this.startPos.x) < pw;
+      case 3: return p.x < this.endPos.x + m && Math.abs(p.z - this.startPos.z) < pw;
     }
   }
 
@@ -447,15 +464,22 @@ export class TrackManager {
     const accel = targetSpeed > this.speed ? 0.85 : 1.3;
     this.speed = THREE.MathUtils.lerp(this.speed, targetSpeed, Math.min(delta * accel, 1));
 
-    for (let i = 0; i < this.segments.length; i++) {
+    // Snapshot length so newly-spawned segments don't get iterated in same frame
+    const segCount = this.segments.length;
+    let needsSpawn = false;
+    for (let i = 0; i < segCount; i++) {
       const seg = this.segments[i];
       if (!seg.passed && seg.checkPassed(playerPos)) seg.passed = true;
       if (!seg.complete && seg.checkComplete(playerPos)) seg.complete = true;
 
       if (seg.passed && !seg.nextRoadSpawned) {
         seg.nextRoadSpawned = true;
-        while (this.segments.length - i < 6) this.spawnNextPlanned();
+        needsSpawn = true;
       }
+    }
+    // Spawn outside the loop to avoid iterating freshly-spawned segments
+    if (needsSpawn) {
+      while (this.segments.length < segCount + 5) this.spawnNextPlanned();
     }
 
     // Cleanup old
